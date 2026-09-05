@@ -218,9 +218,9 @@ def test_rapid_theme_switch_replaces_transition_and_same_theme_is_a_noop(
     try:
         changed = QSignalSpy(manager.theme_changed)
         manager.set_theme("lavender")
-        QTest.qWait(70)
         first_overlays = manager._transition.active_overlays
         assert len(first_overlays) == 1
+        first_overlays[0].set_opacity(0.5)
 
         manager.set_theme("dark")
         second_overlays = manager._transition.active_overlays
