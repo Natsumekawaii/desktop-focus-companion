@@ -1,0 +1,114 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows-release:
+    name: Build Windows release
+    runs-on: windows-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements-dev.txt
+            requirements-build.txt
+
+      - name: Install Python dependencies
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\python.exe -m pip install --disable-pip-version-check -r requirements-dev.txt -r requirements-build.txt
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress --yes
+
+      - name: Verify tag and application versions
+        shell: pwsh
+        run: |
+          $appVersion = (.\.venv\Scripts\python.exe -c "from app import __version__; print(__version__)").Trim()
+          $tagVersion = "${{ github.ref_name }}".TrimStart('v')
+          if ($tagVersion -ne $appVersion) {
+              throw "Tag version $tagVersion does not match app version $appVersion."
+          }
+
+      - name: Run quality gate
+        shell: pwsh
+        run: .\quality.ps1
+
+      - name: Build and smoke-test installer
+        shell: pwsh
+        run: .\build-installer.ps1
+
+      - name: Prepare release assets
+        id: assets
+        shell: pwsh
+        run: |
+          $version = (.\.venv\Scripts\python.exe -c "from app import __version__; print(__version__)").Trim()
+          $releaseRoot = Join-Path $PWD 'dist\release'
+          New-Item -ItemType Directory -Path $releaseRoot -Force | Out-Null
+
+          $installer = Join-Path $PWD "dist\installer\DesktopFocusCompanion-Setup-$version.exe"
+          $portable = Join-Path $releaseRoot "DesktopFocusCompanion-Portable-$version.zip"
+          $checksum = Join-Path $releaseRoot 'SHA256SUMS.txt'
+          if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) {
+              throw "Installer was not created: $installer"
+          }
+
+          Compress-Archive `
+              -Path (Join-Path $PWD 'dist\DesktopFocusCompanion') `
+              -DestinationPath $portable `
+              -CompressionLevel Optimal
+
+          $assets = @($installer, $portable)
+          $lines = foreach ($asset in $assets) {
+              $hash = (Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash.ToLowerInvariant()
+              "$hash  $([System.IO.Path]::GetFileName($asset))"
+          }
+          Set-Content -LiteralPath $checksum -Value $lines -Encoding utf8
+
+          "installer=$installer" >> $env:GITHUB_OUTPUT
+          "portable=$portable" >> $env:GITHUB_OUTPUT
+          "checksum=$checksum" >> $env:GITHUB_OUTPUT
+
+      - name: Publish GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $notes = Join-Path $PWD ".github\release-notes\$tag.md"
+          $assets = @(
+              "${{ steps.assets.outputs.installer }}",
+              "${{ steps.assets.outputs.portable }}",
+              "${{ steps.assets.outputs.checksum }}"
+          )
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+              gh release upload $tag @assets --clobber
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+              exit 0
+          }
+          if (Test-Path -LiteralPath $notes -PathType Leaf) {
+              gh release create $tag @assets --title "Desktop Focus Companion $tag" --notes-file $notes
+          }
+          else {
+              gh release create $tag @assets --title "Desktop Focus Companion $tag" --generate-notes
+          }
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
