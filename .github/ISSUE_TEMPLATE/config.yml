@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security report / 安全问题
+    url: https://github.com/Natsumekawaii/desktop-focus-companion/security/advisories/new
+    about: Report vulnerabilities privately. / 请私下报告漏洞。
+  - name: Questions and ideas / 问答与讨论
+    url: https://github.com/Natsumekawaii/desktop-focus-companion/discussions
+    about: Ask for help or discuss early ideas. / 获取帮助或讨论早期想法。
