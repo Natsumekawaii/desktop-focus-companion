@@ -1,0 +1,62 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+pytest-report*.xml
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+
+# Packaging and build output
+build/
+dist/
+*.egg-info/
+
+# Runtime data (keep the directory placeholder)
+data/*
+!data/.gitkeep
+
+# IDE and operating-system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+tmp/
+*.sqlite3
+*.sqlite3-*
+*.db
+desktop-focus-companion-backup-*.zip
+desktop-focus-companion-emergency-preservation-*.zip
+settings.corrupt-*.json
+active-session.json
+active-session.corrupt-*.json
+*.restore.tmp
+
+# Documentation capture scratch files (published images live in docs/images/)
+build/readme-screenshots/
+docs/images/_drafts/
+
+# Code-signing material must never be committed
+*.pfx
+*.p12
+*.pem
+*.key
+*.cer

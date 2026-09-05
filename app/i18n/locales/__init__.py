@@ -1,0 +1,1 @@
+"""Bundled JSON translation resources."""
