@@ -1,3 +1,5 @@
+[English](database.md) | [简体中文](database.zh-CN.md)
+
 # Desktop Focus Companion Database Schema v5
 
 Desktop Focus Companion stores durable focus data in `%LOCALAPPDATA%\DesktopFocusCompanion\desktop-focus-companion.sqlite3`.

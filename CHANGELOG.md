@@ -1,3 +1,5 @@
+[English](CHANGELOG.md) | [简体中文](CHANGELOG.zh-CN.md)
+
 # Changelog
 
 All notable changes to Desktop Focus Companion are documented here. Versions follow [Semantic Versioning](https://semver.org/), and dates use ISO 8601.
@@ -6,7 +8,7 @@ All notable changes to Desktop Focus Companion are documented here. Versions fol
 
 ### Changed
 
-- Nothing yet.
+- Split all public documentation, contribution templates, Issue Forms, and release notes into linked English and Simplified Chinese versions.
 
 ## [1.0.0] - 2026-09-05
 

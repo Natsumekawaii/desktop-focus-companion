@@ -1,6 +1,6 @@
-name: Feature request
-description: Suggest a focused improvement and explain the user need.
-title: "[Feature]: "
+name: 功能建议
+description: 提出聚焦的改进建议，并说明用户需求。
+title: "[功能]: "
 labels: [enhancement]
 body:
   - type: markdown
@@ -10,26 +10,26 @@ body:
   - type: textarea
     id: problem
     attributes:
-      label: User need
-      description: What problem would this solve?
+      label: 用户需求
+      description: 这项功能希望解决什么问题？
     validations:
       required: true
   - type: textarea
     id: proposal
     attributes:
-      label: Proposed experience
-      description: Describe the behavior, not only the implementation.
+      label: 期望体验
+      description: 请描述期望行为，而不只是实现方式。
     validations:
       required: true
   - type: textarea
     id: alternatives
     attributes:
-      label: Alternatives
-      description: What have you tried or considered?
+      label: 替代方案
+      description: 你尝试或考虑过哪些办法？
   - type: checkboxes
     id: boundaries
     attributes:
-      label: Product boundaries
+      label: 产品边界
       options:
-        - label: This can preserve local-first storage and existing user data.
+        - label: 此建议可以保留本地优先存储并兼容现有用户数据。
           required: true

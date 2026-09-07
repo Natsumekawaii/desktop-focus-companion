@@ -1,6 +1,6 @@
-name: Bug report
-description: Report a reproducible problem without including private Focus data.
-title: "[Bug]: "
+name: 错误报告
+description: 报告可以复现的问题，请勿包含私人专注数据。
+title: "[错误]: "
 labels: [bug]
 body:
   - type: markdown
@@ -8,59 +8,59 @@ body:
       value: |
         [English](https://github.com/Natsumekawaii/desktop-focus-companion/issues/new?template=bug_report.yml) | [简体中文](https://github.com/Natsumekawaii/desktop-focus-companion/issues/new?template=bug_report.zh-CN.yml)
 
-        Thanks for helping improve Desktop Focus Companion. Do not upload real databases, settings files, or screenshots containing private data.
+        感谢你帮助改进 Desktop Focus Companion。请勿上传真实数据库、设置文件或包含私人数据的截图。
   - type: input
     id: version
     attributes:
-      label: Version
+      label: 版本
       placeholder: "1.0.0"
     validations:
       required: true
   - type: dropdown
     id: install-type
     attributes:
-      label: Installation
+      label: 安装方式
       options:
-        - Installer
-        - Portable
-        - Source
+        - 安装版
+        - 便携版
+        - 源码运行
     validations:
       required: true
   - type: input
     id: windows
     attributes:
-      label: Windows version
+      label: Windows 版本
       placeholder: "Windows 11 23H2"
     validations:
       required: true
   - type: textarea
     id: description
     attributes:
-      label: What happened?
-      description: Describe the expected and actual behavior.
+      label: 问题描述
+      description: 请说明预期行为和实际行为。
     validations:
       required: true
   - type: textarea
     id: steps
     attributes:
-      label: Reproduction steps
+      label: 复现步骤
       placeholder: |
-        1. Open ...
-        2. Choose ...
-        3. Observe ...
+        1. 打开……
+        2. 选择……
+        3. 观察到……
     validations:
       required: true
   - type: textarea
     id: context
     attributes:
-      label: Additional context
-      description: Remove names, notes, file paths, and other private data before attaching logs or screenshots.
+      label: 补充信息
+      description: 附加日志或截图前，请移除姓名、备注、文件路径及其他私人数据。
   - type: checkboxes
     id: confirmation
     attributes:
-      label: Checklist
+      label: 检查清单
       options:
-        - label: I searched existing issues.
+        - label: 我已搜索现有 Issue。
           required: true
-        - label: I removed private Focus data from attachments.
+        - label: 附件中不包含私人专注数据。
           required: true

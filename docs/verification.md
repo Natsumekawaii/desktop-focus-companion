@@ -1,3 +1,5 @@
+[English](verification.md) | [简体中文](verification.zh-CN.md)
+
 # Verification Guide
 
 This document records reproducible release checks. It intentionally contains no machine-specific paths, personal data, one-off timestamps, or stale artifact hashes.
@@ -27,7 +29,7 @@ Screenshots must be generated from isolated synthetic profiles, never from a rea
 .\.venv\Scripts\python.exe -m scripts.capture_readme_screenshots --language en-US
 ```
 
-Verify that every image referenced by `README.md` exists, uses the intended language, contains no personal data, and renders legibly on GitHub.
+Verify that every image referenced by `README.md` or `README.zh-CN.md` exists, uses the intended language, contains no personal data, and renders legibly on GitHub.
 
 ## 3. Portable application
 
@@ -80,6 +82,8 @@ SHA256SUMS.txt
 ```
 
 Confirm that the Git tag is `vX.Y.Z`, `app.__version__` is `X.Y.Z`, and the installer metadata uses the same version. Download each uploaded asset from the published GitHub Release and verify its SHA-256 against `SHA256SUMS.txt` before announcing the release.
+
+Release notes must exist as the English default `.github/release-notes/vX.Y.Z.md` and the Simplified Chinese `.github/release-notes/vX.Y.Z.zh-CN.md`. The published Release body uses English by default and links to the Chinese document at the tagged commit.
 
 ## 6. Manual release smoke test
 

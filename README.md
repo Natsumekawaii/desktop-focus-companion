@@ -117,6 +117,14 @@ tests/      unit, component, regression, and acceptance tests
 docs/       architecture, database, safety, and i18n notes
 ```
 
+## Documentation
+
+- [Architecture](docs/architecture.md)
+- [Database schema](docs/database.md)
+- [Data safety](docs/data-safety.md)
+- [Internationalization](docs/i18n.md)
+- [Verification guide](docs/verification.md)
+
 ## Contributing
 
 - Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening an issue or pull request.

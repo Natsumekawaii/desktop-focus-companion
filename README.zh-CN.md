@@ -76,7 +76,7 @@ Desktop Focus Companion 是一款面向 Windows 的本地专注记录应用。�
 - 普通升级和原生卸载不会删除用户数据库及设置；如需彻底移除数据，请在退出应用后自行删除上述目录。
 - 当前版本没有云同步、自动备份或自动更新。重要记录建议定期备份用户数据目录。
 
-更详细的可靠性设计参见 [数据安全说明](docs/data-safety.md) 和 [数据库说明](docs/database.md)。
+更详细的可靠性设计参见 [数据安全说明](docs/data-safety.zh-CN.md) 和 [数据库说明](docs/database.zh-CN.md)。
 
 ## 从源码运行
 
@@ -117,11 +117,19 @@ tests/      单元、组件、回归与验收测试
 docs/       架构、数据库、数据安全和国际化文档
 ```
 
+## 文档
+
+- [架构说明](docs/architecture.zh-CN.md)
+- [数据库结构](docs/database.zh-CN.md)
+- [数据安全](docs/data-safety.zh-CN.md)
+- [国际化开发指南](docs/i18n.zh-CN.md)
+- [验证指南](docs/verification.zh-CN.md)
+
 ## 参与项目
 
-- 提交问题前请先阅读 [贡献指南](CONTRIBUTING.md)。
-- 安全问题请按照 [安全策略](SECURITY.md) 私下报告，不要公开敏感细节。
-- 版本变化记录在 [CHANGELOG](CHANGELOG.md)。
+- 提交问题前请先阅读 [贡献指南](CONTRIBUTING.zh-CN.md)。
+- 安全问题请按照 [安全策略](SECURITY.zh-CN.md) 私下报告，不要公开敏感细节。
+- 版本变化记录在 [更新日志](CHANGELOG.zh-CN.md)。
 - 本项目采用 [MIT License](LICENSE)。
 
 已知限制：当前只提供 Windows 64 位构建；安装包尚未签名；暂无云同步、网页端或自动更新服务。
