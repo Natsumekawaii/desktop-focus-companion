@@ -1,3 +1,5 @@
+[English](data-safety.md) | [简体中文](data-safety.zh-CN.md)
+
 # Automatic Persistence and Data Safety
 
 Desktop Focus Companion 1.0 is local-first and has no Save/Apply workflow.

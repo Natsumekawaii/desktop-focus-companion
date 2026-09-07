@@ -1,3 +1,5 @@
+[English](architecture.md) | [简体中文](architecture.zh-CN.md)
+
 # Desktop Focus Companion 1.0 Architecture
 
 Desktop Focus Companion is a local-first PySide6 personal focus system. The desktop companion is a presentation and shortcut boundary; it does not encode Focus state, goals, consistency, or analytics.

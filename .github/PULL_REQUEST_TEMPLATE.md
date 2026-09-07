@@ -1,8 +1,10 @@
-## Summary / 变更总结
+[English](https://github.com/Natsumekawaii/desktop-focus-companion/blob/main/.github/PULL_REQUEST_TEMPLATE.md) | [简体中文](https://github.com/Natsumekawaii/desktop-focus-companion/blob/main/.github/PULL_REQUEST_TEMPLATE/pull_request.zh-CN.md)
 
-<!-- Explain the user-visible problem and the proposed result. / 说明用户问题和预期结果。 -->
+## Summary
 
-## Verification / 验证
+<!-- Explain the user-visible problem and the proposed result. -->
+
+## Verification
 
 - [ ] `quality.ps1` passes locally.
 - [ ] New or changed behavior has tests.
@@ -10,10 +12,10 @@
 - [ ] UI changes were checked in all relevant themes and window sizes.
 - [ ] No database, settings, logs, build output, or real user data is included.
 
-## Screenshots / 截图
+## Screenshots
 
-<!-- Add before/after images for visible changes. Remove private data first. / 可见改动请附前后截图并移除隐私数据。 -->
+<!-- Add before/after images for visible changes. Remove private data first. -->
 
-## Compatibility / 兼容性
+## Compatibility
 
-<!-- Note database, settings, packaging, installer, or accessibility impact. / 说明数据库、设置、打包、安装器或无障碍影响。 -->
+<!-- Note database, settings, packaging, installer, or accessibility impact. -->

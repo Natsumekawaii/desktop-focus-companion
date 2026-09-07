@@ -93,7 +93,28 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = "${{ github.ref_name }}"
-          $notes = Join-Path $PWD ".github\release-notes\$tag.md"
+          $repository = "${{ github.repository }}"
+          $englishNotes = Join-Path $PWD ".github\release-notes\$tag.md"
+          $chineseNotes = Join-Path $PWD ".github\release-notes\$tag.zh-CN.md"
+          if (-not (Test-Path -LiteralPath $englishNotes -PathType Leaf)) {
+              throw "English release notes were not found: $englishNotes"
+          }
+          if (-not (Test-Path -LiteralPath $chineseNotes -PathType Leaf)) {
+              throw "Simplified Chinese release notes were not found: $chineseNotes"
+          }
+
+          $englishBody = @(Get-Content -LiteralPath $englishNotes -Encoding utf8)
+          if ($englishBody.Count -gt 0 -and $englishBody[0] -match '^\[English\]') {
+              $englishBody = @($englishBody | Select-Object -Skip 1)
+          }
+          while ($englishBody.Count -gt 0 -and [string]::IsNullOrWhiteSpace($englishBody[0])) {
+              $englishBody = @($englishBody | Select-Object -Skip 1)
+          }
+          $publishedNotes = Join-Path $env:RUNNER_TEMP "$tag-release-notes.md"
+          $languageLinks = "[English](https://github.com/$repository/releases/tag/$tag) | [简体中文](https://github.com/$repository/blob/${{ github.sha }}/.github/release-notes/$tag.zh-CN.md)"
+          $publishedLines = @($languageLinks, '') + $englishBody
+          Set-Content -LiteralPath $publishedNotes -Value $publishedLines -Encoding utf8
+
           $assets = @(
               "${{ steps.assets.outputs.installer }}",
               "${{ steps.assets.outputs.portable }}",
@@ -103,12 +124,9 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
               gh release upload $tag @assets --clobber
               if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+              gh release edit $tag --title "Desktop Focus Companion $tag" --notes-file $publishedNotes
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
               exit 0
           }
-          if (Test-Path -LiteralPath $notes -PathType Leaf) {
-              gh release create $tag @assets --title "Desktop Focus Companion $tag" --notes-file $notes
-          }
-          else {
-              gh release create $tag @assets --title "Desktop Focus Companion $tag" --generate-notes
-          }
+          gh release create $tag @assets --title "Desktop Focus Companion $tag" --notes-file $publishedNotes
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
