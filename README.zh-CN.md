@@ -52,8 +52,8 @@ Desktop Focus Companion 是一款面向 Windows 的本地专注记录应用。�
 
 <table>
   <tr>
-    <td width="50%"><strong>专注面板</strong><br><img src="docs/images/zh/focus-panel.png" alt="中文专注面板"></td>
-    <td width="50%"><strong>真实时间轴</strong><br><img src="docs/images/zh/timeline.png" alt="中文专注时间轴"></td>
+    <td width="50%"><strong>专注面板</strong><br><div align="center"><img src="docs/images/zh/focus-panel.png" height="420" alt="中文专注面板"></div></td>
+    <td width="50%"><strong>项目管理</strong><br><div align="center"><img src="docs/images/zh/focus-items.png" height="420" alt="中文项目管理"></div></td>
   </tr>
   <tr>
     <td><strong>数据分析</strong><br><img src="docs/images/zh/analytics.png" alt="中文数据分析"></td>
@@ -61,13 +61,13 @@ Desktop Focus Companion 是一款面向 Windows 的本地专注记录应用。�
   </tr>
   <tr>
     <td><strong>专注历史</strong><br><img src="docs/images/zh/history.png" alt="中文专注历史"></td>
-    <td><strong>项目管理</strong><br><img src="docs/images/zh/focus-items.png" alt="中文项目管理"></td>
+    <td><strong>真实时间轴</strong><br><img src="docs/images/zh/timeline.png" alt="中文专注时间轴"></td>
   </tr>
 </table>
 
 ### 六套全局主题
 
-![Desktop Focus Companion 中文炭黑主题设置](docs/images/zh/themes.png)
+<a href="docs/images/zh/themes.png"><img src="docs/images/zh/themes.png" alt="Desktop Focus Companion 默认、浅紫色、浅粉色、浅蓝色、深色和炭黑主题"></a>
 
 ## 数据与隐私
 

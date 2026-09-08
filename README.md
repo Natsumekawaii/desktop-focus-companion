@@ -52,8 +52,8 @@ Desktop Focus Companion is a local-first focus tracker for Windows. It combines 
 
 <table>
   <tr>
-    <td width="50%"><strong>Focus panel</strong><br><img src="docs/images/en/focus-panel.png" alt="English Focus panel"></td>
-    <td width="50%"><strong>True-time timeline</strong><br><img src="docs/images/en/timeline.png" alt="English Focus timeline"></td>
+    <td width="50%"><strong>Focus panel</strong><br><div align="center"><img src="docs/images/en/focus-panel.png" height="420" alt="English Focus panel"></div></td>
+    <td width="50%"><strong>Focus Item management</strong><br><div align="center"><img src="docs/images/en/focus-items.png" height="420" alt="English Focus Item management"></div></td>
   </tr>
   <tr>
     <td><strong>Analytics</strong><br><img src="docs/images/en/analytics.png" alt="English analytics"></td>
@@ -61,13 +61,13 @@ Desktop Focus Companion is a local-first focus tracker for Windows. It combines 
   </tr>
   <tr>
     <td><strong>Focus history</strong><br><img src="docs/images/en/history.png" alt="English Focus history"></td>
-    <td><strong>Focus Item management</strong><br><img src="docs/images/en/focus-items.png" alt="English Focus Item management"></td>
+    <td><strong>True-time timeline</strong><br><img src="docs/images/en/timeline.png" alt="English Focus timeline"></td>
   </tr>
 </table>
 
 ### Six application-wide themes
 
-![Desktop Focus Companion English Charcoal theme settings](docs/images/en/themes.png)
+<a href="docs/images/en/themes.png"><img src="docs/images/en/themes.png" alt="Desktop Focus Companion in Default, Lavender, Pink, Blue, Dark, and Charcoal themes"></a>
 
 ## Data and privacy
 

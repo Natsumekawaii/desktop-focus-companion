@@ -3,9 +3,22 @@
 from __future__ import annotations
 
 import re
+import struct
 from pathlib import Path
 
+from PySide6.QtGui import QColor, QImage
+
 from app import __version__
+from app.core.theme import COLOR_THEMES
+from scripts.capture_readme_screenshots import (
+    THEME_LABEL_HEIGHT,
+    THEME_PREVIEW_HEIGHT,
+    THEME_PREVIEW_WIDTH,
+    THEME_SHEET_COLUMNS,
+    THEME_SHEET_GAP,
+    THEME_SHEET_MARGIN,
+    _theme_contact_sheet,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCREENSHOT_NAMES = {
@@ -18,6 +31,7 @@ SCREENSHOT_NAMES = {
     "themes.png",
     "timeline.png",
 }
+THEME_SHEET_SIZE = (1332, 708)
 BILINGUAL_MARKDOWN_PAIRS = (
     (Path("README.md"), Path("README.zh-CN.md")),
     (Path("CHANGELOG.md"), Path("CHANGELOG.zh-CN.md")),
@@ -55,6 +69,11 @@ PULL_REQUEST_LANGUAGE_SWITCH = (
 
 def _read(path: Path) -> str:
     return (PROJECT_ROOT / path).read_text(encoding="utf-8")
+
+
+def _png_size(contents: bytes) -> tuple[int, int]:
+    assert contents.startswith(b"\x89PNG\r\n\x1a\n")
+    return struct.unpack(">II", contents[16:24])
 
 
 def _language_switch(english: Path, chinese: Path) -> str:
@@ -127,6 +146,97 @@ def test_readmes_use_language_specific_screenshots() -> None:
             contents = (PROJECT_ROOT / image_path).read_bytes()
             assert contents.startswith(b"\x89PNG\r\n\x1a\n")
             assert len(contents) > 10_000
+
+
+def test_readme_product_tour_uses_the_compact_aligned_order() -> None:
+    for path, titles, language in (
+        (
+            Path("README.md"),
+            (
+                "Focus panel",
+                "Focus Item management",
+                "Analytics",
+                "Monthly calendar",
+                "Focus history",
+                "True-time timeline",
+            ),
+            "en",
+        ),
+        (
+            Path("README.zh-CN.md"),
+            ("专注面板", "项目管理", "数据分析", "月度日历", "专注历史", "真实时间轴"),
+            "zh",
+        ),
+    ):
+        readme = _read(path)
+        table = re.search(r"<table>(.*?)</table>", readme, re.DOTALL)
+        assert table is not None
+        cells = re.findall(r"<td[^>]*>(.*?)</td>", table.group(1), re.DOTALL)
+        assert len(cells) == 6
+        assert tuple(re.search(r"<strong>(.*?)</strong>", cell).group(1) for cell in cells) == titles
+        assert tuple(
+            re.search(rf'docs/images/{language}/([a-z-]+\.png)', cell).group(1)
+            for cell in cells
+        ) == (
+            "focus-panel.png",
+            "focus-items.png",
+            "analytics.png",
+            "monthly.png",
+            "history.png",
+            "timeline.png",
+        )
+        assert 'height="420"' in cells[0]
+        assert 'height="420"' in cells[1]
+
+
+def test_theme_contact_sheets_are_compact_landscape_images() -> None:
+    for language, names in (
+        ("en", ("Default", "Lavender", "Pink", "Blue", "Dark", "Charcoal")),
+        ("zh", ("默认", "浅紫色", "浅粉色", "浅蓝色", "深色", "炭黑")),
+    ):
+        path = Path("docs") / "images" / language / "themes.png"
+        contents = (PROJECT_ROOT / path).read_bytes()
+        assert _png_size(contents) == THEME_SHEET_SIZE
+        readme = _read(Path("README.md" if language == "en" else "README.zh-CN.md"))
+        theme_image = re.search(
+            rf'<a href="{re.escape(path.as_posix())}"><img src="{re.escape(path.as_posix())}" alt="([^"]+)"></a>',
+            readme,
+        )
+        assert theme_image is not None
+        alt_text = theme_image.group(1)
+        positions = tuple(alt_text.index(name) for name in names)
+        assert positions == tuple(sorted(positions))
+
+
+def test_theme_contact_sheet_preserves_the_stable_three_by_two_order(
+    qt_application,
+) -> None:
+    colors = ("#d9534f", "#8f63b8", "#cc5b86", "#4286b4", "#77518f", "#69717d")
+    previews: dict[str, QImage] = {}
+    for theme_name, color in zip(COLOR_THEMES, colors, strict=True):
+        preview = QImage(16, 12, QImage.Format.Format_RGB32)
+        preview.fill(QColor(color))
+        previews[theme_name] = preview
+
+    sheet = _theme_contact_sheet(previews)
+
+    assert (sheet.width(), sheet.height()) == THEME_SHEET_SIZE
+    assert len(previews) == 6
+    for index, color in enumerate(colors):
+        row, column = divmod(index, THEME_SHEET_COLUMNS)
+        x = (
+            THEME_SHEET_MARGIN
+            + column * (THEME_PREVIEW_WIDTH + THEME_SHEET_GAP)
+            + THEME_PREVIEW_WIDTH // 2
+        )
+        y = (
+            THEME_SHEET_MARGIN
+            + row
+            * (THEME_LABEL_HEIGHT + THEME_PREVIEW_HEIGHT + THEME_SHEET_GAP)
+            + THEME_LABEL_HEIGHT
+            + THEME_PREVIEW_HEIGHT // 2
+        )
+        assert sheet.pixelColor(x, y).name() == color
 
 
 def test_public_markdown_relative_links_resolve() -> None:
