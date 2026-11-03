@@ -572,7 +572,8 @@ class FocusPanel(_FocusPanelBuilders, QDialog):
             TimerState.FOCUSING: "state.focusing",
             TimerState.PAUSED: "state.paused",
         }
-        self._title.setText(tr(title_keys[self._timer_state]))
+        development_suffix = ' [DEV]' if self.property('developmentProfile') else ''
+        self._title.setText(tr(title_keys[self._timer_state]) + development_suffix)
         self._state_label.setText(tr(state_keys[self._timer_state]))
         self._active_focus_item_label.setText(
             self._active_focus_item or tr("focus.session_fallback")

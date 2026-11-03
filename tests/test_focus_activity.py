@@ -461,17 +461,17 @@ def test_activity_hover_uses_interruptible_opaque_color_animation(
     geometry_before = tuple(widget._cell_rects)
 
     QTest.mouseMove(widget, rect.center().toPoint())
-    QTest.qWait(45)
+    widget._hover_animations[key].setCurrentTime(45)
     qt_application.processEvents()
     assert 0 < widget._hover_strengths[key] < 1
     assert tuple(widget._cell_rects) == geometry_before
 
-    QTest.qWait(120)
+    widget._hover_animations[key].setCurrentTime(120)
     assert widget._hover_strengths[key] == pytest.approx(1.0)
     QTest.mouseMove(widget, widget.rect().bottomRight())
-    QTest.qWait(45)
+    widget._hover_animations[key].setCurrentTime(45)
     assert 0 < widget._hover_strengths[key] < 1
-    QTest.qWait(160)
+    widget._hover_animations[key].setCurrentTime(150)
     assert key not in widget._hover_strengths
     widget.close()
 

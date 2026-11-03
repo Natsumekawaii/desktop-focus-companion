@@ -7,6 +7,7 @@ import logging
 from PySide6.QtCore import QObject, QPoint, QRect, QTimer, Signal
 from PySide6.QtGui import QGuiApplication
 
+from app.data.database import DatabaseError
 from app.data.focus_item_repository import (
     DEFAULT_FOCUS_COLOR,
     FocusItemError,
@@ -128,6 +129,7 @@ class FocusPanelController(QObject):
             )
         except (
             FocusItemError,
+            DatabaseError,
             FocusSessionManagerError,
             InvalidTimerStateError,
             InvalidTargetDurationError,
@@ -202,6 +204,7 @@ class FocusPanelController(QObject):
             session = self._session_manager.recover_active_session()
         except (
             FocusItemError,
+            DatabaseError,
             FocusSessionManagerError,
             ValueError,
         ) as error:
@@ -232,7 +235,12 @@ class FocusPanelController(QObject):
         return session
 
     def show_focus_items(self) -> None:
-        self._focus_item_dialog.set_focus_items(self._focus_item_repository.list_active())
+        try:
+            items = self._focus_item_repository.list_active()
+        except (DatabaseError, FocusItemError) as error:
+            self._panel.show_error(str(error))
+            return
+        self._focus_item_dialog.set_focus_items(items)
         self._focus_item_dialog.show()
         self._focus_item_dialog.raise_()
         self._focus_item_dialog.activateWindow()
@@ -240,7 +248,7 @@ class FocusPanelController(QObject):
     def create_focus_item(self, name: str, color: str = DEFAULT_FOCUS_COLOR) -> None:
         try:
             item = self._focus_item_repository.create(name, color)
-        except FocusItemError as error:
+        except (FocusItemError, DatabaseError) as error:
             self._panel.show_error(str(error))
             return
         self.refresh_focus_items(item.id)
@@ -249,7 +257,7 @@ class FocusPanelController(QObject):
     def rename_focus_item(self, focus_item_id: int, name: str) -> None:
         try:
             item = self._focus_item_repository.rename(focus_item_id, name)
-        except FocusItemError as error:
+        except (FocusItemError, DatabaseError) as error:
             self._panel.show_error(str(error))
             return
         self.refresh_focus_items(item.id)
@@ -266,7 +274,7 @@ class FocusPanelController(QObject):
         try:
             item = self._focus_item_repository.get(focus_item_id)
             impact = self._focus_item_repository.deletion_impact(focus_item_id)
-        except FocusItemError as error:
+        except (FocusItemError, DatabaseError) as error:
             self._panel.show_error(str(error))
             return
         if not ask_confirmation(
@@ -283,7 +291,7 @@ class FocusPanelController(QObject):
             return
         try:
             self._focus_item_repository.delete_with_history(focus_item_id)
-        except FocusItemError as error:
+        except (FocusItemError, DatabaseError) as error:
             self._panel.show_error(str(error))
             return
         self.refresh_focus_items()
@@ -349,7 +357,13 @@ class FocusPanelController(QObject):
                 self._auto_finish_in_progress = False
 
     def _refresh_today(self) -> None:
-        self._panel.set_today_total(format_compact_duration(self._statistics.today_total()))
+        try:
+            total = self._statistics.today_total()
+        except (RuntimeError, ValueError, OSError) as error:
+            logging.getLogger(__name__).exception('Today summary refresh failed')
+            self._panel.show_error(str(error))
+            return
+        self._panel.set_today_total(format_compact_duration(total))
 
     def _on_language_changed(self, _language: str) -> None:
         self.refresh_focus_items()

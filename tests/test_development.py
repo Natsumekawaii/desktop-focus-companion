@@ -37,3 +37,24 @@ def test_development_startup_is_disabled_and_never_reads_registry(tmp_path, monk
     startup.set_enabled(False)
     with pytest.raises(RuntimeError):
         startup.set_enabled(True)
+
+
+def test_demo_seed_is_once_and_explicit_reset_is_scoped(tmp_path, monkeypatch):
+    from scripts import run_dev
+    seeded = []
+    def seed(paths, language):
+        seeded.append(language)
+        (paths.data_dir / 'marker').write_text('seed')
+    monkeypatch.setattr(run_dev, '_seed_demo_profile', seed)
+    paths = development_paths(tmp_path)
+    prepare_profile(paths)
+    (paths.data_dir / 'marker').write_text('working state')
+    prepare_profile(paths)
+    assert len(seeded) == 1
+    assert (paths.data_dir / 'marker').read_text() == 'working state'
+    outside = tmp_path / 'production-marker'
+    outside.write_text('untouched')
+    prepare_profile(paths, reset=True)
+    assert len(seeded) == 2
+    assert (paths.data_dir / 'marker').read_text() == 'seed'
+    assert outside.read_text() == 'untouched'

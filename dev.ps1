@@ -7,7 +7,7 @@ if (-not (Test-Path -LiteralPath $pythonPath -PathType Leaf)) {
 }
 Push-Location $PSScriptRoot
 try {
-    & $pythonPath -c 'import PySide6'
+    & $pythonPath -c 'import PySide6, tzdata'
     if ($LASTEXITCODE -ne 0) {
         throw 'Install dependencies: .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt'
     }

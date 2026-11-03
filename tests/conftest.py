@@ -2,6 +2,7 @@
 
 import gc
 import os
+from time import monotonic
 
 import pytest
 
@@ -15,6 +16,20 @@ def qt_application():
     from app.application import create_application
 
     return create_application(["desktop-focus-companion-test"])
+
+
+@pytest.fixture
+def qt_wait_until(qt_application):
+    """Bounded event-loop wait for the few tests exercising real animation time."""
+    from PySide6.QtTest import QTest
+    def wait(predicate, timeout_ms=1000):
+        deadline = monotonic() + timeout_ms / 1000
+        while not predicate():
+            if monotonic() >= deadline:
+                pytest.fail(f'Qt condition was not reached within {timeout_ms}ms')
+            QTest.qWait(5)
+        qt_application.processEvents()
+    return wait
 
 
 @pytest.fixture(autouse=True)
@@ -40,6 +55,7 @@ def qt_resource_scope(qt_application, monkeypatch):
     theme = get_theme_manager()
     localization = get_localization()
     initial_theme, initial_language = theme.theme_name, localization.language
+    initial_quit_policy = qt_application.quitOnLastWindowClosed()
     baseline = set(qt_application.allWidgets())
     owned: list[QObject] = []
     original_init = ApplicationRuntime.__init__
@@ -78,5 +94,6 @@ def qt_resource_scope(qt_application, monkeypatch):
     theme.set_theme(initial_theme)
     theme._transition.finish_all()
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    qt_application.setQuitOnLastWindowClosed(initial_quit_policy)
     remaining = set(qt_application.allWidgets()) - baseline
     assert not remaining, f'{len(remaining)} test-owned Qt widgets survived teardown'

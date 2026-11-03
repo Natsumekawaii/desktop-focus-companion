@@ -19,32 +19,58 @@ from app.ui.session_editor_dialog import SessionEditorDialog
 
 def record(*, hours=2, duration=3600, zone=timezone.utc):
     start = datetime(2026, 1, 3, 10, 0, 23, 4567, tzinfo=zone)
-    return FocusSession(1, 1, 'Synthetic', start, start + timedelta(hours=hours), duration,
-                        FocusMode.STOPWATCH, None, 'note', FocusSessionSource.TIMER, start, start)
+    return FocusSession(
+        1,
+        1,
+        "Synthetic",
+        start,
+        start + timedelta(hours=hours),
+        duration,
+        FocusMode.STOPWATCH,
+        None,
+        "note",
+        FocusSessionSource.TIMER,
+        start,
+        start,
+    )
 
 
 def editor(session, zone=timezone.utc):
     dialog = SessionEditorDialog(zone)
-    item = FocusItem(1, 'Synthetic', '#7C5CFC', False, False, session.created_at, session.created_at)
+    item = FocusItem(
+        1, "Synthetic", "#7C5CFC", False, False, session.created_at, session.created_at
+    )
     dialog.set_focus_items([item])
     dialog.set_session(session)
     return dialog
 
 
-@pytest.mark.parametrize('hours,duration', [(2, 3600), (30, 108000), (1100, 3960000)])
-def test_editor_roundtrip_preserves_seconds_multi_day_and_long_duration(qt_application, hours, duration):
+@pytest.mark.parametrize("hours,duration", [(2, 3600), (30, 108000), (1100, 3960000)])
+def test_editor_roundtrip_preserves_seconds_multi_day_and_long_duration(
+    qt_application, hours, duration
+):
     session = record(hours=hours, duration=duration)
     dialog = editor(session)
-    assert dialog.focus_values()[1:4] == (session.start_time, session.end_time, session.duration_seconds)
-    dialog._note_edit.setPlainText('changed')
-    assert dialog.focus_values()[1:4] == (session.start_time, session.end_time, session.duration_seconds)
+    assert dialog.focus_values()[1:4] == (
+        session.start_time,
+        session.end_time,
+        session.duration_seconds,
+    )
+    dialog._note_edit.setPlainText("changed")
+    assert dialog.focus_values()[1:4] == (
+        session.start_time,
+        session.end_time,
+        session.duration_seconds,
+    )
     dialog._start_edit.setTime(QTime(9, 0))
     assert dialog.focus_values()[2:4] == (session.end_time, session.duration_seconds)
     dialog._duration_picker.setValue(30)
     assert dialog.focus_values()[2:4] == (session.end_time, 1800)
 
 
-@pytest.mark.parametrize('value', [float('nan'), float('inf'), -float('inf'), -1, True, False])
+@pytest.mark.parametrize(
+    "value", [float("nan"), float("inf"), -float("inf"), -1, True, False]
+)
 def test_restore_rejects_invalid_elapsed_without_changing_state(value):
     timer = FocusTimer()
     with pytest.raises((ValueError, TypeError)):
@@ -52,37 +78,72 @@ def test_restore_rejects_invalid_elapsed_without_changing_state(value):
     assert timer.current_state is TimerState.IDLE
     assert timer.start_time is None
     with pytest.raises((ValueError, TypeError)):
-        ActiveSessionCheckpoint('token', 1, 'Synthetic', datetime.now(timezone.utc), value,
-                                'PAUSED', datetime.now(timezone.utc))
+        ActiveSessionCheckpoint(
+            "token",
+            1,
+            "Synthetic",
+            datetime.now(timezone.utc),
+            value,
+            "PAUSED",
+            datetime.now(timezone.utc),
+        )
 
 
-@pytest.mark.parametrize('value', ['NaN', 'Infinity', '-Infinity', 'true', '-1'])
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "-Infinity", "true", "-1"])
 def test_invalid_json_checkpoint_is_preserved(tmp_path, value):
-    path = tmp_path / 'active-session.json'
-    path.write_text('{"version":4,"recovery_token":"token","focus_item_id":1,"focus_item_name":"Synthetic",'
-                    '"start_time":"2026-01-01T00:00:00+00:00","last_checkpoint":"2026-01-01T00:00:00+00:00",'
-                    '"timer_state":"PAUSED","accumulated_seconds":' + value + '}', encoding='utf-8')
+    path = tmp_path / "active-session.json"
+    path.write_text(
+        '{"version":4,"recovery_token":"token","focus_item_id":1,"focus_item_name":"Synthetic",'
+        '"start_time":"2026-01-01T00:00:00+00:00","last_checkpoint":"2026-01-01T00:00:00+00:00",'
+        '"timer_state":"PAUSED","accumulated_seconds":' + value + "}",
+        encoding="utf-8",
+    )
     assert ActiveSessionStore(path).load() is None
     assert not path.exists()
-    assert len(list(tmp_path.glob('active-session.corrupt-*.json'))) == 1
+    assert len(list(tmp_path.glob("active-session.corrupt-*.json"))) == 1
 
 
 def test_dst_allocation_preserves_actual_seconds():
-    zone = ZoneInfo('America/New_York')
+    zone = ZoneInfo("America/New_York")
     start = datetime(2026, 3, 7, 23, tzinfo=zone)
     end = datetime(2026, 3, 9, 1, tzinfo=zone)
-    session = replace(record(), start_time=start, end_time=end, duration_seconds=elapsed_seconds(start, end))
+    session = replace(
+        record(),
+        start_time=start,
+        end_time=end,
+        duration_seconds=elapsed_seconds(start, end),
+    )
     totals = allocate_session_by_local_date(session, zone)
     assert list(totals.values()) == [3600, 23 * 3600, 3600]
     assert sum(totals.values()) == session.duration_seconds
-    assert len(local_candidates(datetime(2026, 3, 8, 2, 30, tzinfo=timezone.utc).replace(tzinfo=None), zone)) == 0
-    assert len(local_candidates(datetime(2026, 11, 1, 1, 30, tzinfo=timezone.utc).replace(tzinfo=None), zone)) == 2
+    assert (
+        len(
+            local_candidates(
+                datetime(2026, 3, 8, 2, 30, tzinfo=timezone.utc).replace(tzinfo=None),
+                zone,
+            )
+        )
+        == 0
+    )
+    assert (
+        len(
+            local_candidates(
+                datetime(2026, 11, 1, 1, 30, tzinfo=timezone.utc).replace(tzinfo=None),
+                zone,
+            )
+        )
+        == 2
+    )
 
 
-def test_editor_preserves_fold_and_requires_selection_for_ambiguous_input(qt_application):
-    zone = ZoneInfo('America/New_York')
+def test_editor_preserves_fold_and_requires_selection_for_ambiguous_input(
+    qt_application,
+):
+    zone = ZoneInfo("America/New_York")
     start = datetime(2026, 11, 1, 1, 30, 17, tzinfo=zone, fold=1)
-    session = replace(record(), start_time=start, end_time=datetime(2026, 11, 1, 3, 0, tzinfo=zone))
+    session = replace(
+        record(), start_time=start, end_time=datetime(2026, 11, 1, 3, 0, tzinfo=zone)
+    )
     dialog = editor(session, zone)
     assert dialog.focus_values()[1].timestamp() == start.timestamp()
     dialog._start_edit.setTime(QTime(1, 45))
@@ -92,5 +153,121 @@ def test_editor_preserves_fold_and_requires_selection_for_ambiguous_input(qt_app
     assert dialog.focus_values()[1].fold == 1
     dialog._date_edit.setDate(QDate(2026, 3, 8))
     dialog._start_edit.setTime(QTime(2, 30))
+    with pytest.raises(ValueError):
+        dialog.focus_values()
+
+
+def test_repository_roundtrip_retains_original_seconds_and_timer_metadata(tmp_path):
+    from app.data.database import Database
+    from app.data.focus_item_repository import FocusItemRepository
+    from app.data.focus_session_repository import FocusSessionRepository
+
+    database = Database(tmp_path / "test.sqlite3")
+    database.initialize()
+    items = FocusItemRepository(database)
+    item = items.create("Synthetic")
+    repository = FocusSessionRepository(database)
+    original = record()
+    saved = repository.create(
+        item,
+        original.start_time,
+        original.end_time,
+        3600,
+        recovery_token="token",
+        mode=FocusMode.COUNTDOWN,
+        target_duration_seconds=7200,
+    )
+    # Simulate a valid legacy record without going through today's minute-only creation API.
+    with database.connect() as connection:
+        connection.execute(
+            "UPDATE focus_sessions SET duration_seconds = 3600.25 WHERE id = ?",
+            (saved.id,),
+        )
+    saved = repository.get(saved.id)
+    changed = repository.update(
+        saved.id,
+        item,
+        saved.start_time,
+        saved.end_time,
+        saved.duration_seconds,
+        "edited",
+    )
+    assert (changed.start_time, changed.end_time, changed.duration_seconds) == (
+        saved.start_time,
+        saved.end_time,
+        saved.duration_seconds,
+    )
+    assert (
+        changed.mode,
+        changed.target_duration_seconds,
+        changed.source,
+        changed.created_at,
+    ) == (saved.mode, saved.target_duration_seconds, saved.source, saved.created_at)
+    with database.connect() as connection:
+        assert (
+            connection.execute(
+                "SELECT recovery_token FROM focus_sessions WHERE id=?", (saved.id,)
+            ).fetchone()[0]
+            == "token"
+        )
+
+
+def test_repository_accepts_forward_interval_across_fold(tmp_path):
+    from app.data.database import Database
+    from app.data.focus_item_repository import FocusItemRepository
+    from app.data.focus_session_repository import FocusSessionRepository
+
+    database = Database(tmp_path / "test.sqlite3")
+    database.initialize()
+    item = FocusItemRepository(database).create("Synthetic")
+    zone = ZoneInfo("America/New_York")
+    start = datetime(2026, 11, 1, 1, 45, tzinfo=zone, fold=0)
+    end = datetime(2026, 11, 1, 1, 15, tzinfo=zone, fold=1)
+    assert (
+        FocusSessionRepository(database).create(item, start, end, 1800).duration_seconds
+        == 1800
+    )
+
+
+def test_fall_back_allocation_is_25_hours():
+    zone = ZoneInfo("America/New_York")
+    start = datetime(2026, 10, 31, 23, tzinfo=zone)
+    end = datetime(2026, 11, 2, 1, tzinfo=zone)
+    session = replace(
+        record(), start_time=start, end_time=end, duration_seconds=27 * 3600
+    )
+    assert list(allocate_session_by_local_date(session, zone).values()) == [
+        3600,
+        25 * 3600,
+        3600,
+    ]
+
+
+def test_timeline_fold_keeps_actual_interval_and_repeated_hour_order(qt_application):
+    from app.ui.timeline_widget import DailyTimelineWidget
+
+    zone = ZoneInfo("America/New_York")
+    start = datetime(2026, 11, 1, 1, 45, tzinfo=zone, fold=0)
+    end = datetime(2026, 11, 1, 1, 15, tzinfo=zone, fold=1)
+    session = replace(record(), start_time=start, end_time=end, duration_seconds=1800)
+    widget = DailyTimelineWidget(zone)
+    widget.set_values(start.date(), [session], {1: "#7C5CFC"})
+    assert len(widget.blocks) == 1
+    assert widget.blocks[0].duration_seconds == 1800
+    assert (
+        widget._minute_of_selected_day(end) - widget._minute_of_selected_day(start)
+        == 30
+    )
+    assert widget._day_minutes() == 25 * 60
+
+
+def test_editor_refuses_saving_after_system_timezone_change(
+    qt_application, monkeypatch
+):
+    import app.ui.session_editor_dialog as module
+
+    monkeypatch.setattr(module, "system_timezone", lambda: ZoneInfo("Etc/UTC"))
+    dialog = editor(record())
+    monkeypatch.setattr(module, "system_timezone", lambda: ZoneInfo("Asia/Shanghai"))
     with pytest.raises(ValueError):
         dialog.focus_values()

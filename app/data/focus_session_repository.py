@@ -8,6 +8,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
 
+from app.core.timezones import elapsed_seconds
 from app.data.database import Database
 from app.data.datetime_utils import from_storage_datetime, to_storage_datetime, utc_now
 from app.data.models import FocusItem, FocusSession, FocusSessionSource
@@ -208,7 +209,7 @@ class FocusSessionRepository:
     def list_overlapping(
         self, start_at: datetime, end_before: datetime
     ) -> list[FocusSession]:
-        if end_before <= start_at:
+        if elapsed_seconds(start_at, end_before) <= 0:
             raise InvalidFocusSessionError(tr("error.session_query_order"))
         with self._database.connect() as connection:
             rows = connection.execute(
@@ -232,10 +233,23 @@ class FocusSessionRepository:
     ) -> FocusSession:
         """Update editable history fields while retaining source and timer metadata."""
 
-        validate_focus_session(start_time, end_time, duration_seconds)
-        normalized_note = normalize_note(note)
+        to_storage_datetime(start_time)
+        to_storage_datetime(end_time)
         with self._database.connect() as connection:
-            item_name = validated_focus_item_name(connection, focus_item.id)
+            original = connection.execute(
+                "SELECT * FROM focus_sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+            if original is None:
+                raise FocusSessionNotFoundError(tr("error.session_not_found_id", id=session_id))
+            _validate_focus_session_values(
+                start_time, end_time, duration_seconds,
+                preserve_duration=duration_seconds == original["duration_seconds"],
+            )
+            normalized_note = original["note"] if note == original["note"] else normalize_note(note)
+            item_name = (
+                original["focus_item_name"] if focus_item.id == original["focus_item_id"]
+                else validated_focus_item_name(connection, focus_item.id)
+            )
             cursor = connection.execute(
                 """
                 UPDATE focus_sessions
@@ -275,9 +289,16 @@ class FocusSessionRepository:
 def validate_focus_session(
     start_time: datetime, end_time: datetime, duration_seconds: float
 ) -> None:
+    _validate_focus_session_values(start_time, end_time, duration_seconds)
+
+
+def _validate_focus_session_values(
+    start_time: datetime, end_time: datetime, duration_seconds: float,
+    *, preserve_duration: bool = False,
+) -> None:
     to_storage_datetime(start_time)
     to_storage_datetime(end_time)
-    if end_time < start_time:
+    if elapsed_seconds(start_time, end_time) < 0:
         raise InvalidFocusSessionError(tr("error.session_time_order"))
     if (
         isinstance(duration_seconds, bool)
@@ -285,9 +306,9 @@ def validate_focus_session(
         or not math.isfinite(float(duration_seconds))
     ):
         raise InvalidFocusSessionError(tr("error.session_duration_numeric"))
-    if duration_seconds < MIN_FOCUS_DURATION_SECONDS:
+    if duration_seconds < 0 or (not preserve_duration and duration_seconds < MIN_FOCUS_DURATION_SECONDS):
         raise InvalidFocusSessionError(tr("error.session_duration_minimum"))
-    if not _is_complete_minute(float(duration_seconds)):
+    if not preserve_duration and not _is_complete_minute(float(duration_seconds)):
         raise InvalidFocusSessionError(tr("error.session_duration_precision"))
 
 

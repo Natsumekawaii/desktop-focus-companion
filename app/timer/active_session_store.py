@@ -10,6 +10,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from app.core.timezones import elapsed_seconds
 from app.data.datetime_utils import from_storage_datetime, to_storage_datetime
 from app.focus_mode import FocusMode, validate_target_duration
 from app.timer.validation import checkpoint_seconds, validate_elapsed_seconds
@@ -43,6 +44,8 @@ class ActiveSessionCheckpoint:
         to_storage_datetime(self.last_checkpoint)
         if self.end_time is not None:
             to_storage_datetime(self.end_time)
+            if elapsed_seconds(self.start_time, self.end_time) < 0:
+                raise ValueError("Recovery checkpoint end precedes its start.")
         if self.focus_item_id <= 0 or not self.focus_item_name.strip():
             raise ValueError("Recovery checkpoint has an invalid Focus Item.")
         if not self.recovery_token.strip() or len(self.recovery_token) > 80:
@@ -146,7 +149,7 @@ class ActiveSessionStore:
             raise ActiveSessionStoreError("Unable to clear active-session recovery data.") from error
 
     def _preserve_corrupt(self) -> None:
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
         destination = self.path.with_name(f"active-session.corrupt-{timestamp}.json")
         try:
             shutil.move(self.path, destination)

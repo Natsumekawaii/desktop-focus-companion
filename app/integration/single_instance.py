@@ -18,7 +18,7 @@ class _WindowsApplicationMutex:
     def __init__(self, name: str) -> None:
         self._name = name
         self._handle: int | None = None
-        self._kernel32: object | None = None
+        self._kernel32: ctypes.WinDLL | None = None
 
     def acquire(self) -> None:
         if sys.platform != "win32" or self._handle is not None:
@@ -36,7 +36,7 @@ class _WindowsApplicationMutex:
     def release(self) -> None:
         if self._handle is None or self._kernel32 is None:
             return
-        close_handle = self._kernel32.CloseHandle  # type: ignore[attr-defined]
+        close_handle = self._kernel32.CloseHandle
         close_handle.argtypes = (ctypes.c_void_p,)
         close_handle.restype = ctypes.c_int
         close_handle(self._handle)

@@ -269,8 +269,10 @@ def run_application(
             return 0
         runtime = build_runtime(paths, development=development)
         if development:
+            runtime.quick_panel.setProperty('developmentProfile', True)
+            runtime.quick_panel._refresh_state_text()
             def label_development(_language: str | None = None) -> None:
-                for window in (runtime.pet_window, runtime.dashboard_window, runtime.settings_dialog):
+                for window in (runtime.pet_window, runtime.dashboard_window, runtime.settings_dialog, runtime.quick_panel, runtime.focus_item_dialog):
                     window.setWindowTitle(window.windowTitle().removesuffix(' [DEV]') + ' [DEV]')
                 runtime.tray_controller.tray_icon.setToolTip(tr('app.name') + ' [DEV]')
             get_localization().language_changed.connect(label_development)
@@ -290,7 +292,7 @@ def run_application(
             (
                 f"{tr('startup.database_failed')}\n\n{tr('startup.database_preserved')}"
                 if isinstance(startup_error, DatabaseError)
-                else tr("startup.failed")
+                else f"{tr('startup.failed')}\n\n{startup_error}"
             ),
         )
         return 1
@@ -299,4 +301,7 @@ def run_application(
             "Desktop Focus Companion %s shutting down", __version__
         )
         if instance_guard is not None:
-            instance_guard.release()
+            try:
+                instance_guard.release()
+            except OSError:
+                logging.getLogger(__name__).exception("Could not release instance resources")

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QMessageBox
 
@@ -36,7 +38,12 @@ class GamificationController(QObject):
         self.refresh()
 
     def refresh(self) -> None:
-        snapshot = self._service.snapshot()
+        try:
+            snapshot = self._service.snapshot()
+        except (RuntimeError, ValueError, OSError) as error:
+            logging.getLogger(__name__).exception('Progress refresh failed')
+            self._quick_panel.show_error(str(error))
+            return
         self._quick_panel.set_gamification(snapshot)
         self._dashboard.set_gamification(snapshot)
         self._settings_dialog.set_focus_goal_preferences(
@@ -44,7 +51,13 @@ class GamificationController(QObject):
             snapshot.weekly_goal_seconds // 60,
             snapshot.streak_minimum_seconds // 60,
         )
-        if snapshot.goal_completed and self._service.mark_goal_celebrated_today():
+        try:
+            celebrate = snapshot.goal_completed and self._service.mark_goal_celebrated_today()
+        except (RuntimeError, ValueError, OSError) as error:
+            logging.getLogger(__name__).exception('Progress notification persistence failed')
+            self._quick_panel.show_error(str(error))
+            return
+        if celebrate:
             self.notification_requested.emit(
                 tr("notification.goal_title"), tr("notification.goal_body")
             )
@@ -61,12 +74,17 @@ class GamificationController(QObject):
                 streak_minutes * 60,
                 weekly_goal_minutes * 60,
             )
-        except ValueError as error:
+        except (RuntimeError, ValueError, OSError) as error:
             QMessageBox.warning(self._settings_dialog, tr("app.name"), str(error))
             return
         self.refresh()
 
     def _refresh_localized(self, _language: str) -> None:
-        snapshot = self._service.snapshot()
+        try:
+            snapshot = self._service.snapshot()
+        except (RuntimeError, ValueError, OSError) as error:
+            logging.getLogger(__name__).exception('Localized progress refresh failed')
+            self._quick_panel.show_error(str(error))
+            return
         self._quick_panel.set_gamification(snapshot)
         self._dashboard.set_gamification(snapshot)

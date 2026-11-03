@@ -36,10 +36,14 @@ def prepare_profile(paths: ApplicationPaths, *, reset: bool = False) -> None:
         raise ValueError('Only the dedicated development profile can be reset.')
     # Keep the preparation lock OUTSIDE the directory being reset, so no other
     # launcher can enter between reset, seeding and application startup.
+    staging = expected.with_name('.dev-data-initializing')
+    if staging.is_symlink() or staging.is_junction() or staging.resolve().parent != paths.project_root:
+        raise ValueError('Refusing redirected development staging directory.')
+    if reset and staging.exists():
+        shutil.rmtree(staging)
     if reset and expected.exists():
         shutil.rmtree(expected)
     if not expected.exists():
-        staging = expected.with_name('.dev-data-initializing')
         if staging.exists():
             raise RuntimeError('Incomplete demo initialization exists; inspect .dev-data-initializing.')
         staging.mkdir()

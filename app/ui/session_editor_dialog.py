@@ -135,6 +135,7 @@ class SessionEditorDialog(QDialog):
                 self._focus_items,
                 int(selected_id) if selected_id is not None else None,
             )
+        self._refresh_ambiguity()
 
     def set_focus_items(
         self,
@@ -210,7 +211,8 @@ class SessionEditorDialog(QDialog):
             duration = elapsed_seconds(start, end)
         if elapsed_seconds(start, end) < 0:
             raise ValueError(tr('error.session_time_order'))
-        note = self._note_edit.toPlainText().strip()
+        raw_note = self._note_edit.toPlainText()
+        note = raw_note if self._original and raw_note == self._original.note else raw_note.strip()
         if len(note) > 2000:
             raise ValueError(tr("error.focus_note_long"))
         return focus_item_id, start, end, duration, note
@@ -237,6 +239,7 @@ class SessionEditorDialog(QDialog):
         self._end_edit.setVisible(not direct_duration)
         self._duration_label.setVisible(editing or direct_duration)
         self._duration_widget.setVisible(editing or direct_duration)
+        self._refresh_ambiguity()
 
     def _resolve_wall(self, wall: datetime, selector: RoundedComboBox, start: bool) -> datetime:
         if self._original is not None:
