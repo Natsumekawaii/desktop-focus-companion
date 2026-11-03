@@ -67,6 +67,7 @@ from app.statistics import (
     StatisticsPeriod,
 )
 from app.timer.formatting import format_compact_duration
+from app.ui.agent_page import AgentPage
 from app.ui.dashboard_builders import _DashboardWindowBuilders
 from app.ui.dashboard_widgets import (
     _DashboardPageStack,
@@ -86,6 +87,7 @@ class DashboardPage(IntEnum):
     MONTHLY = 3
     FOCUS_ITEMS = 4
     HISTORY = 5
+    AI_ASSISTANT = 6
 
 
 class DashboardWindow(_DashboardWindowBuilders, QMainWindow):
@@ -153,6 +155,8 @@ class DashboardWindow(_DashboardWindowBuilders, QMainWindow):
         self._pages.add_page(self._build_monthly_tab())
         self._pages.add_page(self._build_subject_tab())
         self._pages.add_page(self._build_history_tab())
+        self.agent_page = AgentPage()
+        self._pages.add_page(self.agent_page)
         # Transitional alias retained for integrations that only read page metadata.
         self._tabs = self._pages
         self._history_tab_index = int(DashboardPage.HISTORY)
@@ -180,6 +184,7 @@ class DashboardWindow(_DashboardWindowBuilders, QMainWindow):
             "dashboard.tab.monthly",
             "dashboard.tab.subjects",
             "dashboard.tab.history",
+            "agent.title",
         )):
             self._tabs.setTabText(index, tr(key))
             button = self._nav_buttons[DashboardPage(index)]
@@ -618,6 +623,7 @@ class DashboardWindow(_DashboardWindowBuilders, QMainWindow):
             DashboardPage.MONTHLY: "dashboard.tab.monthly",
             DashboardPage.FOCUS_ITEMS: "dashboard.tab.subjects",
             DashboardPage.HISTORY: "dashboard.tab.history",
+            DashboardPage.AI_ASSISTANT: "agent.title",
         }
 
         self._nav_focus_label = self._navigation_label()
@@ -636,6 +642,7 @@ class DashboardWindow(_DashboardWindowBuilders, QMainWindow):
         sidebar_layout.addWidget(self._nav_library_label)
         self._add_navigation_button(sidebar_layout, DashboardPage.FOCUS_ITEMS)
         self._add_navigation_button(sidebar_layout, DashboardPage.HISTORY)
+        self._add_navigation_button(sidebar_layout, DashboardPage.AI_ASSISTANT)
         sidebar_layout.addStretch()
         return sidebar
 
@@ -707,6 +714,7 @@ class DashboardWindow(_DashboardWindowBuilders, QMainWindow):
             IconName.MONTHLY,
             IconName.FOCUS_ITEMS,
             IconName.HISTORY,
+            IconName.ASSISTANT,
         )
         for index, name in enumerate(icons):
             icon = IconSystem.icon(name)

@@ -72,7 +72,7 @@ Desktop Focus Companion is a local-first focus tracker for Windows. It combines 
 ## Data and privacy
 
 - Focus records, preferences, logs, and custom assets stay under `%LOCALAPPDATA%\DesktopFocusCompanion` by default.
-- The app requires no account, uploads no Focus content, and contains no telemetry or advertising service.
+- Core focus tracking requires no account and works offline, with no telemetry or advertising. The optional AI Assistant on the development branch sends your chat and relevant focus data to DeepSeek only after you explicitly enable it with your own API Key. It is not included in the existing published installer; see [AI development and privacy](docs/development.md#optional-deepseek-assistant).
 - Normal upgrades and the built-in uninstaller preserve the user database and preferences. To remove everything, exit the app and delete the data directory yourself.
 - Version 1.0 has no cloud sync, automatic backup, or automatic updater. Back up the data directory if the records are important to you.
 

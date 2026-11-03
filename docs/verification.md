@@ -6,6 +6,10 @@ This document records reproducible release checks. It intentionally contains no 
 
 ## 1. Quality gate
 
+For the optional assistant, first run `python -m pytest tests/test_agent.py -q`. These tests are offline: fake provider responses and temporary SQLite databases, never a real Key. Check the source-only AI page in both languages, six themes and 760/1060 px windows; use only synthetic conversation/source/confirmation examples. The default full gate includes this suite.
+
+Verify multi-chat restoration, no pending execution after restart, source-card expansion, safe Markdown, copied text, narrow-window chat-list collapse, model validation and session-only Key fallback. Exercise incomplete C-class requests, fresh reads before edits, confirmation/cancellation, transaction rollback, repeated operation IDs, stale previews and a committed operation followed by a network failure. Live DeepSeek testing is a separate opt-in step with the call budget described in [local development](development.md#optional-deepseek-assistant); an offline pass does not claim live model behavior was tested.
+
 Create a Python 3.12.10 virtual environment, install the development dependencies, and run:
 
 ```powershell

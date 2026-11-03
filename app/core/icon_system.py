@@ -34,6 +34,7 @@ class IconName(Enum):
     MONTHLY = "monthly"
     FOCUS_ITEMS = "focus_items"
     HISTORY = "history"
+    ASSISTANT = "assistant"
     SETTINGS = "settings"
     SHOW_COMPANION = "show_companion"
     EXIT = "exit"
@@ -142,6 +143,12 @@ def _render(name: IconName, size: int, color: QColor) -> QPixmap:
         painter.drawLine(QLineF(5, 16, size - 3, 16))
         painter.drawLine(QLineF(12, 7, size - 3, 7))
         painter.drawLine(QLineF(13, 11.5, size - 3, 11.5))
+    elif name is IconName.ASSISTANT:
+        painter.drawRoundedRect(QRectF(3, 3, 14, 11), 3, 3)
+        painter.drawLine(QLineF(7, 14, 5, 17))
+        painter.drawLine(QLineF(5, 17, 11, 14))
+        for x in (7, 10, 13):
+            painter.drawPoint(QPointF(x, 8.5))
     elif name is IconName.SETTINGS:
         painter.drawEllipse(QRectF(center.x() - 3.2, center.y() - 3.2, 6.4, 6.4))
         painter.drawEllipse(QRectF(center.x() - 1, center.y() - 1, 2, 2))

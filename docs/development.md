@@ -2,6 +2,22 @@
 
 # Local development
 
+## Optional DeepSeek assistant
+
+This branch adds an **unpublished** AI Assistant page after the six existing Focus Center pages. Run `dev.ps1`, open Focus Center → AI Assistant → AI configuration. Enter a personal Key locally, read the disclosure, and choose Verify and save. The official model list must contain the selected model (`deepseek-flash` by default, optionally `deepseek-v4-pro`). Deep thinking is explicit; unavailable models are never silently replaced. No Key is bundled and no paid request is part of automated testing.
+
+Chats and settings live under `.dev-data/agent`; Windows credentials are namespaced to that profile. Never send the Key to a developer, paste it in chat, put it in environment files for this feature, or include it in screenshots. With the Key removed or AI disabled, other features remain offline. See [Data safety](data-safety.md#optional-ai-and-data-leaving-the-device).
+
+```powershell
+.\quality.ps1 -Mode Fast -Tests tests/test_agent.py
+```
+
+Tests inject a fake network client and temporary databases. They exercise SSE, tool authorization, paging beyond 1,000 records, DST, confirmation/cancellation, atomic rollback, receipts, profile isolation and bilingual themed widgets. The deterministic capture helper in `scripts/capture_ui_baseline.py` also includes the appended page. Do not replace mock tests with live API tests in CI.
+
+For a separately agreed live check, use only synthetic `.dev-data` records, cap the session at **six completion requests** (model-list verification is separate), and stop when the cap is reached. Suggested cases: one factual query with a source card; one incomplete request followed by explicit YYYY-MM-DD/HH:MM/project details; one confirmed note edit. Stop and inspect before retrying any operation. A single agent turn itself has a hard eight-request safety ceiling, not a promise that live tests will use all eight. Stop prevents new calls but cannot refund an already sent request or undo a committed record.
+
+Natural-language grounding is deliberately conservative. If a date/time phrase is not recognized, the assistant asks for an explicit date and HH:MM; it must not guess. Project IDs must resolve to existing user-chosen items. Long histories stay local, while only complete recent turns fit into the bounded request context. Chat notes can contain private information even when the API Key is securely stored.
+
 ## Quick loop
 
 Use Windows and Python **3.12.10**. From the repository:
