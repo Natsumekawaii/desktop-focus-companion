@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import date, datetime, time
+from functools import wraps
+from typing import Concatenate, ParamSpec
 
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtWidgets import QDialog, QMessageBox
@@ -28,6 +31,22 @@ from app.ui.replay_dialog import FocusReplayDialog
 from app.ui.session_editor_dialog import SessionEditorDialog
 
 logger = logging.getLogger(__name__)
+
+_P = ParamSpec('_P')
+
+
+def _data_boundary(method: Callable[Concatenate[DashboardController, _P], None]) -> Callable[Concatenate[DashboardController, _P], None]:
+    @wraps(method)
+    def guarded(self: DashboardController, /, *args: _P.args, **kwargs: _P.kwargs) -> None:
+        try:
+            with self._statistics.timezone_context():
+                self._window._local_timezone = self._statistics.local_timezone
+                self._window._timeline_widget._local_timezone = self._statistics.local_timezone
+                method(self, *args, **kwargs)
+        except (RuntimeError, ValueError, OSError):
+            logger.exception('Dashboard operation failed: %s', method.__name__)
+            self._window.show_data_error('dashboard.area.history_subjects')
+    return guarded
 
 
 class DashboardController(QObject):
@@ -69,6 +88,7 @@ class DashboardController(QObject):
         self.refresh()
         self._window.show_history()
 
+    @_data_boundary
     def refresh(self) -> None:
         local_now = datetime.now(tz=self._statistics.local_timezone)
         snapshot: DashboardStatisticsSnapshot | None = None
@@ -142,9 +162,11 @@ class DashboardController(QObject):
                 )
                 self._window.show_data_error("dashboard.area.monthly")
 
+    @_data_boundary
     def refresh_focus_items(self, period: StatisticsPeriod) -> None:
         self._window.set_focus_item_totals(self._statistics.focus_item_totals(period))
 
+    @_data_boundary
     def refresh_timeline(self, selected_day: date) -> None:
         try:
             reference = datetime.combine(
@@ -162,6 +184,7 @@ class DashboardController(QObject):
             logger.exception("Timeline refresh failed for %s", selected_day)
             self._window.show_data_error("dashboard.area.selected_day")
 
+    @_data_boundary
     def show_today_replay(self) -> None:
         summary = self._statistics.daily_replay()
         self._replay_dialog.set_summary(summary)
@@ -169,6 +192,7 @@ class DashboardController(QObject):
         self._replay_dialog.raise_()
         self._replay_dialog.activateWindow()
 
+    @_data_boundary
     def refresh_analytics(self, now: datetime | None = None) -> None:
         try:
             local_now = now or datetime.now(tz=self._statistics.local_timezone)
@@ -178,6 +202,7 @@ class DashboardController(QObject):
             logger.exception("Focus Analytics refresh failed")
             self._window.show_data_error("dashboard.area.analytics")
 
+    @_data_boundary
     def refresh_distribution(
         self,
         period: AnalyticsDistributionPeriod,
@@ -200,6 +225,7 @@ class DashboardController(QObject):
             )
         self._window.set_focus_distribution(period, totals)
 
+    @_data_boundary
     def refresh_month(self, year: int, month: int) -> None:
         try:
             self._set_monthly(self._statistics.monthly_statistics(year, month))
@@ -210,6 +236,7 @@ class DashboardController(QObject):
     def _set_monthly(self, summary: MonthlyStatistics) -> None:
         self._window.set_monthly(summary)
 
+    @_data_boundary
     def add_session(self) -> None:
         dialog = SessionEditorDialog(self._statistics.local_timezone, self._window)
         dialog.set_focus_items(self._focus_items.list_active())
@@ -225,6 +252,7 @@ class DashboardController(QObject):
             return
         self._after_data_change()
 
+    @_data_boundary
     def edit_session(self, session_id: int) -> None:
         try:
             session = self._focus_sessions.get(session_id)
@@ -245,6 +273,7 @@ class DashboardController(QObject):
             return
         self._after_data_change()
 
+    @_data_boundary
     def delete_session(self, session_id: int) -> None:
         if not ask_confirmation(
             self._window,

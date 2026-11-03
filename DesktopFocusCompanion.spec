@@ -1,6 +1,7 @@
 # PyInstaller configuration for the Windows onedir distribution.
 
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_data_files
 
 from app.core.paths import APPLICATION_ICON_RELATIVE_PATH, DEFAULT_PET_RELATIVE_PATH
 
@@ -18,7 +19,7 @@ analysis = Analysis(
         (str(project_root / "assets" / "icons"), str(Path("assets") / "icons")),
         (str(project_root / "app" / "i18n" / "locales" / "en-US.json"), "app/i18n/locales"),
         (str(project_root / "app" / "i18n" / "locales" / "zh-CN.json"), "app/i18n/locales"),
-    ],
+    ] + collect_data_files('tzdata'),
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

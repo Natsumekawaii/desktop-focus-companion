@@ -191,6 +191,13 @@ class FocusSessionManager:
         checkpoint = self._recovery_checkpoint
         if checkpoint is None:
             raise FocusSessionManagerError(tr("error.no_recovery"))
+        checkpoint.__post_init__()
+        # Validate on a temporary timer before changing any recovery identity.
+        if checkpoint.timer_state != 'PENDING':
+            FocusTimer().restore_paused(
+                checkpoint.start_time, checkpoint.accumulated_seconds,
+                FocusMode(checkpoint.mode), checkpoint.target_duration_seconds,
+            )
         self._active_focus_item = self._focus_items.get(
             checkpoint.focus_item_id, include_archived=True
         )

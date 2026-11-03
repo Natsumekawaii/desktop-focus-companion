@@ -1,4 +1,13 @@
 {
+  "session_editor.end_date": "结束日期",
+  "session_editor.effective_duration": "实际专注时长",
+  "session_editor.start_occurrence": "开始时刻",
+  "session_editor.end_occurrence": "结束时刻",
+  "session_editor.occurrence": "第 {count} 次（UTC{offset}）",
+  "error.timezone_unavailable": "无法识别系统时区（{name}）。请检查 Windows 时区设置后重新启动。",
+  "error.timezone_changed": "系统时区已改变，请关闭并重新打开编辑窗口后保存。",
+  "error.time_nonexistent": "夏令时切换跳过了此当地时刻，请选择有效时间。",
+  "error.time_ambiguous": "此当地时刻出现两次，请选择第一次或第二次。",
   "app.name": "Desktop Focus Companion",
   "common.add": "添加",
   "common.apply": "应用",

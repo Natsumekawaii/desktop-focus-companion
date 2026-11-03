@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+import logging
 
 from PySide6.QtCore import QObject, QPoint, QRect, QTimer, Signal
 from PySide6.QtGui import QGuiApplication
@@ -17,7 +17,7 @@ from app.data.models import FocusSession
 from app.focus_mode import FocusMode, InvalidTargetDurationError
 from app.i18n import get_localization, tr
 from app.pet.pet_window import PetWindow
-from app.statistics import StatisticsPeriod, StatisticsService
+from app.statistics import StatisticsService
 from app.timer.focus_session_manager import (
     FocusSessionManager,
     FocusSessionManagerError,
@@ -290,21 +290,19 @@ class FocusPanelController(QObject):
         self.focus_items_changed.emit()
 
     def refresh_focus_items(self, selected_id: int | None = None) -> None:
-        self._panel.set_focus_items(
-            self._focus_item_repository.list_active(), selected_id
+        try:
+            items = self._focus_item_repository.list_active()
+            snapshot = self._statistics.focus_item_metrics()
+        except (RuntimeError, ValueError, OSError) as error:
+            logging.getLogger(__name__).exception('Focus Item metrics refresh failed')
+            self._panel.show_error(str(error))
+            return
+        self._panel.set_focus_items(items, selected_id)
+        self._focus_item_dialog.set_focus_items(items)
+        self._focus_item_dialog.set_focus_item_metrics(
+            {total.focus_item_id: total.duration_seconds for total in snapshot.totals},
+            dict(snapshot.last_records),
         )
-        self._focus_item_dialog.set_focus_items(self._focus_item_repository.list_active())
-        totals = {
-            total.focus_item_id: total.duration_seconds
-            for total in self._statistics.focus_item_totals(StatisticsPeriod.ALL_TIME)
-        }
-        last_records: dict[int, datetime] = {}
-        for session in self._focus_session_repository.list_sessions():
-            last_records.setdefault(
-                session.focus_item_id,
-                session.start_time.astimezone(self._statistics.local_timezone),
-            )
-        self._focus_item_dialog.set_focus_item_metrics(totals, last_records)
     def _after_session_saved(self, session: FocusSession) -> None:
         self._display_timer.stop()
         self._checkpoint_timer.stop()
