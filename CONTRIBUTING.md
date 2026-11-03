@@ -7,7 +7,7 @@ Thank you for improving Desktop Focus Companion. Search existing issues before s
 ## Development workflow
 
 1. Fork the repository and create a short-lived branch from the latest `main`.
-2. Create a Python 3.12 virtual environment and install `requirements-dev.txt`.
+2. Create a Python 3.12.10 virtual environment and install `requirements-dev.txt`.
 3. Keep the change focused. Never commit databases, settings, logs, build output, or screenshots containing real user data.
 4. Add tests for behavior changes; UI changes should cover both languages and relevant themes.
 5. Run `quality.ps1` and require Ruff, mypy, and the full pytest suite to pass.
@@ -21,3 +21,6 @@ Concise Conventional Commit messages such as `fix: preserve timeline hit targets
 - Keep `app.__version__`, installer metadata, and release tags aligned.
 - Preserve the local-first, account-free, telemetry-free product boundary unless a public design discussion agrees otherwise.
 - Do not commit images, fonts, icons, or other copyrighted resources without permission.
+## Local validation
+
+Use [Local development](docs/development.md) for the isolated source launcher and Fast/Docs/Full checks. Keep the final full gate green, but do not rerun it for every minor edit. Build and release safety contracts are covered by automated tests.

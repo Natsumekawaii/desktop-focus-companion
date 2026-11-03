@@ -80,14 +80,14 @@ Desktop Focus Companion 是一款面向 Windows 的本地专注记录应用。�
 
 ## 从源码运行
 
-要求：Windows 10/11、64 位 Python 3.12。
+要求：Windows 10/11、64 位 Python 3.12.10。
 
 ```powershell
 git clone https://github.com/Natsumekawaii/desktop-focus-companion.git
 cd desktop-focus-companion
 py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.\.venv\Scripts\python.exe main.py
+.\dev.ps1
 ```
 
 运行全部质量检查：
@@ -100,11 +100,10 @@ py -3.12 -m venv .venv
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-build.txt
-.\build.ps1
 .\build-installer.ps1
 ```
 
-Inno Setup 6 未安装时，可使用 `build-installer.ps1 -InstallDependencies` 显式安装依赖。生成物位于 `dist\`，不会提交到 Git。
+Inno Setup 6.7.3 未安装时，可使用 `build-installer.ps1 -InstallDependencies` 显式安装依赖。生成物位于 `dist\`，不会提交到 Git。
 
 ## 项目结构
 
@@ -135,3 +134,5 @@ docs/       架构、数据库、数据安全和国际化文档
 已知限制：当前只提供 Windows 64 位构建；安装包尚未签名；暂无云同步、网页端或自动更新服务。
 
 [返回顶部](#desktop-focus-companion) · [English](README.md)
+
+开发时请使用隔离模拟配置，修改源码后退出并重新运行，无需重复下载或安装。详见[本地开发](docs/development.zh-CN.md)；直接运行 `main.py` 仍使用正式配置。本地安装器带 `-local-validation.exe` 后缀，不代表已发布。

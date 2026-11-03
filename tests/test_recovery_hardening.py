@@ -1,4 +1,5 @@
 """Recovery validation is atomic, including error paths during file cleanup."""
+
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,45 +20,59 @@ from app.timer.timer_state import TimerState
 
 
 def checkpoint(item_id=1):
-    return ActiveSessionCheckpoint('token', item_id, 'Synthetic', datetime.now(timezone.utc),
-                                   60, 'PAUSED', datetime.now(timezone.utc))
+    return ActiveSessionCheckpoint(
+        "token",
+        item_id,
+        "Synthetic",
+        datetime.now(timezone.utc),
+        60,
+        "PAUSED",
+        datetime.now(timezone.utc),
+    )
 
 
-def test_checkpoint_save_rejects_mutated_nonfinite_value_without_replacing_file(tmp_path):
+def test_checkpoint_save_rejects_mutated_nonfinite_value_without_replacing_file(
+    tmp_path,
+):
     value = checkpoint()
-    store = ActiveSessionStore(tmp_path / 'active-session.json')
+    store = ActiveSessionStore(tmp_path / "active-session.json")
     store.save(value)
     original = store.path.read_bytes()
-    object.__setattr__(value, 'accumulated_seconds', float('nan'))
+    object.__setattr__(value, "accumulated_seconds", float("nan"))
     with pytest.raises(ValueError):
         store.save(value)
     assert store.path.read_bytes() == original
 
 
 def test_failed_checkpoint_cleanup_keeps_original_exception(tmp_path, monkeypatch):
-    failure = OSError('replace failed')
+    failure = OSError("replace failed")
+
     def fail_replace(*_args):
         raise failure
+
     def fail_unlink(*_args, **_kwargs):
-        raise OSError('cleanup failed')
+        raise OSError("cleanup failed")
+
     with monkeypatch.context() as scope:
-        scope.setattr(os, 'replace', fail_replace)
-        scope.setattr(Path, 'unlink', fail_unlink)
+        scope.setattr(os, "replace", fail_replace)
+        scope.setattr(Path, "unlink", fail_unlink)
         with pytest.raises(ActiveSessionStoreError) as error:
-            ActiveSessionStore(tmp_path / 'active-session.json').save(checkpoint())
+            ActiveSessionStore(tmp_path / "active-session.json").save(checkpoint())
         assert error.value.__cause__ is failure
 
 
-@pytest.mark.parametrize('invalid', [True, float('nan'), -1])
+@pytest.mark.parametrize("invalid", [True, float("nan"), -1])
 def test_invalid_recovery_does_not_assign_active_identity(tmp_path, invalid):
-    database = Database(tmp_path / 'test.sqlite3')
+    database = Database(tmp_path / "test.sqlite3")
     database.initialize()
     items = FocusItemRepository(database)
-    item = items.create('Synthetic')
-    store = ActiveSessionStore(tmp_path / 'active-session.json')
+    item = items.create("Synthetic")
+    store = ActiveSessionStore(tmp_path / "active-session.json")
     store.save(checkpoint(item.id))
-    manager = FocusSessionManager(FocusTimer(), items, FocusSessionRepository(database), store)
-    object.__setattr__(manager.recovery_checkpoint, 'accumulated_seconds', invalid)
+    manager = FocusSessionManager(
+        FocusTimer(), items, FocusSessionRepository(database), store
+    )
+    object.__setattr__(manager.recovery_checkpoint, "accumulated_seconds", invalid)
     with pytest.raises((TypeError, ValueError)):
         manager.recover_active_session()
     assert manager.active_focus_item is None
@@ -66,11 +81,11 @@ def test_invalid_recovery_does_not_assign_active_identity(tmp_path, invalid):
 
 
 def test_recovery_cannot_mutate_a_running_timer(tmp_path):
-    database = Database(tmp_path / 'test.sqlite3')
+    database = Database(tmp_path / "test.sqlite3")
     database.initialize()
     items = FocusItemRepository(database)
-    item = items.create('Synthetic')
-    store = ActiveSessionStore(tmp_path / 'active-session.json')
+    item = items.create("Synthetic")
+    store = ActiveSessionStore(tmp_path / "active-session.json")
     store.save(checkpoint(item.id))
     timer = FocusTimer()
     manager = FocusSessionManager(timer, items, FocusSessionRepository(database), store)

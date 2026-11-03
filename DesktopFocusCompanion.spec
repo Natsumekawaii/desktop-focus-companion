@@ -4,6 +4,7 @@ from pathlib import Path
 from PyInstaller.utils.hooks import collect_data_files
 
 from app.core.paths import APPLICATION_ICON_RELATIVE_PATH, DEFAULT_PET_RELATIVE_PATH
+from scripts.build_support import version_info
 
 project_root = Path(SPECPATH).resolve()
 
@@ -68,7 +69,7 @@ executable = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=str(project_root / "assets" / APPLICATION_ICON_RELATIVE_PATH),
-    version=str(project_root / "assets" / "windows-version-info.txt"),
+    version=version_info(),
 )
 
 distribution = COLLECT(

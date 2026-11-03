@@ -6,7 +6,7 @@ This document records reproducible release checks. It intentionally contains no 
 
 ## 1. Quality gate
 
-Create a Python 3.12 virtual environment, install the development dependencies, and run:
+Create a Python 3.12.10 virtual environment, install the development dependencies, and run:
 
 ```powershell
 .\quality.ps1
@@ -45,11 +45,11 @@ The build is accepted only when:
 - `dist\DesktopFocusCompanion\DesktopFocusCompanion.exe` exists;
 - the packaged-runtime smoke test exits successfully against an isolated profile;
 - Qt platform and image plugins, translations, icons, and the bundled companion image are present;
-- neither `build\` nor `dist\` contains a user database or settings file.
+- distribution files contain no production database or settings; isolated smoke-test profiles and diagnostics may remain under `build\`.
 
 ## 4. Windows installer
 
-With Inno Setup 6 available, run:
+With Inno Setup 6.7.3 available, run:
 
 ```powershell
 .\build-installer.ps1
@@ -69,7 +69,7 @@ The installer smoke test must verify:
 - obsolete program files are replaced;
 - installed application startup succeeds;
 - uninstall removes program files and shortcuts while preserving the isolated user-data marker;
-- the Windows pending-file-operation queue is unchanged by the test.
+- no new application/test paths appear in the paired Windows pending-file-operation queue; unrelated software changes produce a warning, and the queue is never edited.
 
 ## 5. Release artifacts
 
@@ -98,3 +98,10 @@ On a clean Windows test profile:
 7. Uninstall and confirm that the program directory is removed while the user-data directory remains.
 
 Unsigned releases may trigger Windows SmartScreen. This is expected until the project adopts a trusted code-signing certificate.
+## 7. Development hardening gates
+
+See [Local development](development.md) for commands and reports. Verify lossless note/project-only edits, independent start/end/effective duration, 30-hour records, preserved seconds and timer metadata. Exercise malformed/legacy recovery, atomic validation, unavailable storage/logging/locks, IANA timezone changes, DST gaps/folds and 23/25-hour days. The session-level QApplication must return to its test-owned resource baseline after every test.
+
+Run the statistics benchmark at 1,000/10,000/50,000 synthetic records. Each project-metrics/progress snapshot uses one complete read; full Dashboard refresh retains one complete read plus its bounded activity query. Compare before/after screenshots and QSS for both languages, six themes and supported widths. Inspect the edit dialog separately, because its explicit end date and independent duration are intentional changes.
+
+Before building, verify the canonical version, both release-note languages, pinned dependencies, Python and Inno Setup. Test stale/tampered payload rejection, identical existing Release no-op, differing asset rejection, process timeout and source/target reboot-queue filtering. Local builds carry an unpublished manifest; `-SkipApplicationBuild` is not a way around provenance checks. Required PR CI may be awaited, but running logs and main-branch completion are not prerequisites for finishing local development.

@@ -1,7 +1,8 @@
 param(
     [switch]$InstallDependencies,
     [switch]$SkipApplicationBuild,
-    [switch]$SkipInstallerSmokeTest
+    [switch]$SkipInstallerSmokeTest,
+    [switch]$ReleaseBuild
 )
 
 $ErrorActionPreference = 'Stop'
@@ -14,6 +15,7 @@ $portableExe = Join-Path $projectRoot 'dist\DesktopFocusCompanion\DesktopFocusCo
 $smokeRoot = Join-Path $projectRoot 'build\installer-smoke'
 $smokeInstallRoot = Join-Path $smokeRoot 'installed-app'
 $smokeProfileRoot = Join-Path $smokeRoot 'profile'
+. (Join-Path $projectRoot 'scripts\installer_safety.ps1')
 
 function Resolve-InnoCompiler {
     $command = Get-Command 'ISCC.exe' -ErrorAction SilentlyContinue
@@ -49,6 +51,10 @@ function Assert-DirectChildPath {
     if ([System.IO.Path]::GetDirectoryName($resolvedPath) -ne $resolvedParent) {
         throw "Refusing to clean unexpected path: $resolvedPath"
     }
+    if ((Test-Path -LiteralPath $resolvedPath) -and
+        ((Get-Item -LiteralPath $resolvedPath).Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+        throw "Refusing redirected directory: $resolvedPath"
+    }
     return $resolvedPath
 }
 
@@ -74,8 +80,8 @@ function Invoke-SilentInstaller {
         -FilePath $SetupPath `
         -ArgumentList $Arguments `
         -WindowStyle Hidden `
-        -Wait `
         -PassThru
+    Wait-OwnedProcess $process
     if ($process.ExitCode -ne 0) {
         throw "$Description failed with exit code $($process.ExitCode)."
     }
@@ -97,6 +103,7 @@ if ($null -eq $innoCompiler -and $InstallDependencies) {
     & $winget.Source install `
         --id JRSoftware.InnoSetup `
         --exact `
+        --version 6.7.3 `
         --silent `
         --accept-package-agreements `
         --accept-source-agreements `
@@ -108,31 +115,50 @@ if ($null -eq $innoCompiler) {
     throw 'Inno Setup 6 is not installed. Run .\build-installer.ps1 -InstallDependencies.'
 }
 
+if ($InstallDependencies) {
+    & $pythonPath -m pip install -r (Join-Path $projectRoot 'requirements-dev.txt') -r (Join-Path $projectRoot 'requirements-build.txt')
+    if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed.' }
+}
+
+Push-Location $projectRoot
+try {
+    & $pythonPath -m scripts.build_support preflight --compiler $innoCompiler
+    if ($LASTEXITCODE -ne 0) { throw 'Installer preflight failed.' }
+    $appVersion = (& $pythonPath -c 'from app import __version__; print(__version__)').Trim()
+    if ($LASTEXITCODE -ne 0 -or $appVersion -notmatch '^\d+\.\d+\.\d+$') {
+        throw "Application version is not a supported semantic version: $appVersion"
+    }
+}
+finally { Pop-Location }
+
 if (-not $SkipApplicationBuild) {
-    if ($InstallDependencies) {
-        & $applicationBuildScript -InstallDependencies
-    }
-    else {
-        & $applicationBuildScript
-    }
+    & $applicationBuildScript -ReleaseBuild:$ReleaseBuild
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 if (-not (Test-Path -LiteralPath $portableExe -PathType Leaf)) {
     throw "Portable application build was not found: $portableExe"
 }
 
-$appVersion = (& $pythonPath -c 'from app import __version__; print(__version__)').Trim()
-if ($LASTEXITCODE -ne 0 -or $appVersion -notmatch '^\d+\.\d+\.\d+$') {
-    throw "Application version is not a supported semantic version: $appVersion"
+Push-Location $projectRoot
+try {
+    & $pythonPath -m scripts.build_support verify
+    if ($LASTEXITCODE -ne 0) { throw 'Portable artifact verification failed.' }
+    $manifestArguments = @('-m', 'scripts.build_support', 'manifest', '--compiler', $innoCompiler)
+    if ($ReleaseBuild) { $manifestArguments += '--release' }
+    & $pythonPath @manifestArguments
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot record compiler provenance.' }
 }
+finally { Pop-Location }
 
 $versionDefine = "/DMyAppVersion=$appVersion"
 $rootDefine = "/DProjectRoot=$projectRoot"
 $outputDefine = "/DInstallerOutputDir=$installerOutputRoot"
-& $innoCompiler /Qp $versionDefine $rootDefine $outputDefine $installerScript
+$installerBaseName = "DesktopFocusCompanion-Setup-$appVersion"
+if (-not $ReleaseBuild) { $installerBaseName += '-local-validation' }
+& $innoCompiler /Qp $versionDefine $rootDefine $outputDefine "/DInstallerOutputBaseFilename=$installerBaseName" $installerScript
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-$setupPath = Join-Path $installerOutputRoot "DesktopFocusCompanion-Setup-$appVersion.exe"
+$setupPath = Join-Path $installerOutputRoot "$installerBaseName.exe"
 if (-not (Test-Path -LiteralPath $setupPath -PathType Leaf)) {
     throw "Installer was not created: $setupPath"
 }
@@ -141,7 +167,9 @@ if (-not $SkipInstallerSmokeTest) {
     $buildRoot = Join-Path $projectRoot 'build'
     $validatedSmokeRoot = Assert-DirectChildPath -Path $smokeRoot -ExpectedParent $buildRoot
     if ([System.IO.Directory]::Exists($validatedSmokeRoot)) {
-        [System.IO.Directory]::Delete($validatedSmokeRoot, $true)
+        $diagnosticArchive = Join-Path $projectRoot ('artifacts\installer-smoke-' + [System.DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss-fff'))
+        New-Item -ItemType Directory -Path (Split-Path -Parent $diagnosticArchive) -Force | Out-Null
+        Move-Item -LiteralPath $validatedSmokeRoot -Destination $diagnosticArchive
     }
     $smokePackageRoot = Join-Path $validatedSmokeRoot 'package'
     New-Item -ItemType Directory -Path $smokeProfileRoot -Force | Out-Null
@@ -207,8 +235,8 @@ if (-not $SkipInstallerSmokeTest) {
                 "/DIR=`"$mutexBlockedInstallRoot`""
             ) `
             -WindowStyle Hidden `
-            -Wait `
             -PassThru
+        Wait-OwnedProcess $blockedInstallProcess
         if ($blockedInstallProcess.ExitCode -eq 0) {
             throw 'Installer was not blocked by the running-application mutex.'
         }
@@ -230,7 +258,8 @@ if (-not $SkipInstallerSmokeTest) {
             '/SP-',
             '/NOICONS',
             '/NoStartupMigration=1',
-            "/DIR=`"$smokeInstallRoot`""
+            "/DIR=`"$smokeInstallRoot`"",
+            "/LOG=`"$(Join-Path $validatedSmokeRoot 'install.log')`""
         )
         Invoke-SilentInstaller `
             -SetupPath $smokeBaselineSetupPath `
@@ -306,12 +335,23 @@ if (-not $SkipInstallerSmokeTest) {
         if (-not (Test-Path -LiteralPath $uninstallerPath -PathType Leaf)) {
             throw "Uninstaller was not created: $uninstallerPath"
         }
+        $uninstallMutex = [System.Threading.Mutex]::new($false, $smokeMutexName)
+        try {
+            $blockedUninstall = Start-Process -FilePath $uninstallerPath `
+                -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') `
+                -WindowStyle Hidden -PassThru
+            Wait-OwnedProcess $blockedUninstall
+            if ($blockedUninstall.ExitCode -eq 0 -or -not (Test-Path -LiteralPath $installedExe)) {
+                throw 'Uninstaller did not respect the running-application mutex.'
+            }
+        }
+        finally { $uninstallMutex.Dispose() }
         $uninstallProcess = Start-Process `
             -FilePath $uninstallerPath `
             -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') `
             -WindowStyle Hidden `
-            -Wait `
             -PassThru
+        Wait-OwnedProcess $uninstallProcess
         if ($uninstallProcess.ExitCode -ne 0) {
             throw "Silent uninstaller smoke test failed with exit code $($uninstallProcess.ExitCode)."
         }
@@ -336,27 +376,26 @@ if (-not $SkipInstallerSmokeTest) {
     }
     finally {
         if (Test-Path -LiteralPath $uninstallerPath -PathType Leaf) {
-            Start-Process `
-                -FilePath $uninstallerPath `
-                -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') `
-                -WindowStyle Hidden `
-                -Wait | Out-Null
+            try {
+                Invoke-SilentInstaller -SetupPath $uninstallerPath `
+                    -Arguments @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') `
+                    -Description 'Cleanup uninstall'
+            }
+            catch { Write-Warning "Cleanup failed; original diagnostics retained: $_" }
         }
-        if ([System.IO.Directory]::Exists($validatedSmokeRoot)) {
-            [System.IO.Directory]::Delete($validatedSmokeRoot, $true)
-        }
-    }
-    $pendingOperationsAfter = @(Get-PendingFileRenameOperations)
-    $pendingBeforeJson = ConvertTo-Json -InputObject $pendingOperationsBefore -Compress
-    $pendingAfterJson = ConvertTo-Json -InputObject $pendingOperationsAfter -Compress
-    if ($pendingBeforeJson -ne $pendingAfterJson) {
-        throw (
-            'Installer smoke test changed the Windows pending file operation queue. ' +
-            'A build must not create a reboot requirement.'
-        )
+        $pendingOperationsAfter = @(Get-PendingFileRenameOperations)
+        Assert-PendingQueueSafe -Before $pendingOperationsBefore -After $pendingOperationsAfter `
+            -Roots @($validatedSmokeRoot,
+                     (Join-Path $env:LOCALAPPDATA 'Programs\DesktopFocusCompanion'),
+                     (Join-Path $env:LOCALAPPDATA 'DesktopFocusCompanion'))
+        # Retain logs and the isolated profile for diagnostics; never delete real data.
     }
     Write-Output `
         'Installer mutex/install/upgrade/reinstall/start/uninstall/reboot-queue smoke test passed.'
 }
 
 Write-Output "Desktop Focus Companion installer created at: $setupPath"
+
+$hash = (Get-FileHash -LiteralPath $setupPath -Algorithm SHA256).Hash.ToLowerInvariant()
+"$hash  $([System.IO.Path]::GetFileName($setupPath))" | Set-Content -LiteralPath (Join-Path $installerOutputRoot 'SHA256SUMS.txt') -Encoding ascii
+if (-not $ReleaseBuild) { Write-Output 'UNPUBLISHED local validation build; no release assets changed.' }

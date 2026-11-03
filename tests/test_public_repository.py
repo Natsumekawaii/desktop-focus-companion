@@ -42,6 +42,7 @@ BILINGUAL_MARKDOWN_PAIRS = (
     (Path("docs/database.md"), Path("docs/database.zh-CN.md")),
     (Path("docs/i18n.md"), Path("docs/i18n.zh-CN.md")),
     (Path("docs/verification.md"), Path("docs/verification.zh-CN.md")),
+    (Path("docs/development.md"), Path("docs/development.zh-CN.md")),
     (
         Path(f".github/release-notes/v{__version__}.md"),
         Path(f".github/release-notes/v{__version__}.zh-CN.md"),
@@ -57,6 +58,7 @@ LANGUAGE_SECTION_MARKERS = {
     "database.md": ("## Other retained tables", "## 其他保留表"),
     "i18n.md": ("## Implementation", "## 实现方案"),
     "verification.md": ("## 1. Quality gate", "## 1. 质量检查"),
+    "development.md": ("## Quick loop", "## 快速验证循环"),
     f"v{__version__}.md": ("## Downloads", "## 下载"),
 }
 PULL_REQUEST_LANGUAGE_SWITCH = (
@@ -312,19 +314,20 @@ def test_public_metadata_uses_one_release_version() -> None:
         Path(f".github/release-notes/v{__version__}.zh-CN.md"),
     ):
         assert __version__ in _read(path)
-    assert f'#define MyAppVersion "{__version__}"' in installer
+    assert '#error MyAppVersion must be supplied from app.__version__' in installer
 
 
 def test_release_workflow_requires_and_links_both_note_languages() -> None:
     workflow = _read(Path(".github/workflows/release.yml"))
 
-    assert "$tag.md" in workflow
-    assert "$tag.zh-CN.md" in workflow
-    assert "English release notes were not found" in workflow
-    assert "Simplified Chinese release notes were not found" in workflow
+    from scripts.publish_release import notes_body
+    body = notes_body(f'v{__version__}', 'owner/repository', 'a' * 40)
+    assert f'v{__version__}.zh-CN.md' in body
+    assert '## Downloads' in body
+    assert '## 下载' not in body
     assert "${{ github.sha }}" in workflow
-    assert "$publishedLines = @($languageLinks, '') + $englishBody" in workflow
-    assert "gh release edit" in workflow
+    assert 'scripts.publish_release' in workflow
+    assert '--clobber' not in workflow
     assert "--generate-notes" not in workflow
 
 

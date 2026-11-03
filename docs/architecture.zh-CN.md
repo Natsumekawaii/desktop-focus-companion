@@ -100,3 +100,14 @@ bounded/all-session focus_sessions query
 `DesktopFocusCompanion.spec` 包含默认桌面伙伴、全部应用图标、zh-CN／en-US 语言目录、Qt 插件和规范应用模块。它会拒绝通过构建主机 PATH 发现的第三方 ICU DLL，因为 Windows 版 Qt 依赖无版本后缀的系统 ICU API。`build.ps1` 使用 `--clean` 调用 PyInstaller，随后针对隔离配置启动打包后的 EXE，并要求其按预期干净退出；DLL 或导入错误对话框因此会使构建失败。
 
 `build-installer.ps1` 使用 Inno Setup 把 onedir 输出编译为 `dist\installer` 下的当前用户安装器。固定安装器 AppId 是升级边界。程序文件位于 `%LOCALAPPDATA%\Programs\DesktopFocusCompanion`，持久用户状态则独立保存在 `%LOCALAPPDATA%\DesktopFocusCompanion`；升级会完整替换程序目录，卸载删除二进制文件和系统入口，但不删除专注历史或偏好。应用运行期间，单实例保护器还会持有与 Inno Setup `AppMutex` 对应的稳定 Windows 命名互斥量，因此安装和卸载会提示用户从托盘退出，而不是删除占用中的文件或安排重启时清理。安装器验证会使用新的临时 AppId 进行编译，依次安装低版本基线、原位升级、重复安装当前版本，再通过打包运行时检查启动已安装程序，最后验证干净卸载、数据保留，以及 Windows 待处理文件操作队列未发生变化，全程不触碰真实安装或开机启动项。
+## 开发加固边界
+
+- `theme_tokens`、`theme_styles`、`theme_transitions` 分离 Token、逐字不变的 QSS 和过渡快照；`theme.py` 保留兼容导出。
+- `dashboard_builders`、`quick_panel_builders`、`settings_dialog_builders` 按页面组织构建，不重建控件或改变信号顺序。`activity_layout` 负责纯聚合、几何和命中计算，`heatmap_widget` 保留绘制及交互。
+- `FocusItemMetricsSnapshot`、`ProgressStatisticsSnapshot` 只在一次操作内使用，不是跨刷新缓存。项目列表读取一次；累计与最近记录共用一次历史读取。目标刷新复用同一日期汇总及原始时长总和。
+- `timezones.system_timezone()` 通过 Qt 获取系统 IANA 标识，配合标准库 ZoneInfo 和打包的 tzdata 解析。每次统计固定时区快照，显式注入时区保持固定。当地日期确定归属，UTC 差值决定跨日分配和夏令时时间轴位置。运行中计时仍使用单调时钟。
+- 编辑窗固定时区，保留未修改的原始时间戳、秒数和时长，开始、结束和有效时长独立修改。不存在的当地时间拒绝保存；重复时刻需选择 fold，未修改的原 fold 保留。仓库更新保留旧记录未修改的精度及计时元数据。
+- 检查点加载／保存／恢复在修改状态前拒绝非有限、负数及布尔时长，JSON 不输出 NaN／Infinity。清理错误不会替代原始写入错误。继续支持 v1–v4 恢复读取、schema v1–v5 迁移、Subject 适配器及 Study 别名。
+- `dev.ps1` 注入仅源码使用的隔离配置，正式默认行为不变。`scripts/build_support.py` 生成统一 EXE 版本并验证版本／源码／产物来源；构建清单不是用户数据备份。
+
+安装冒烟验证按源／目标配对比较待处理操作；新增应用／测试路径则失败，无关软件活动只警告，绝不改写系统队列。质量检查及发布边界见[本地开发](development.zh-CN.md)。

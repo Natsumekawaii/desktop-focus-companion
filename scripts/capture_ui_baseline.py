@@ -17,6 +17,7 @@ from app.core.theme import COLOR_THEMES, get_theme_manager
 from app.i18n import get_localization
 from app.ui.dashboard import DashboardPage
 from scripts.capture_readme_screenshots import _capture, _seed_demo_profile
+from scripts.qt_capture import prepare_capture_fonts
 
 
 def main() -> None:
@@ -26,6 +27,7 @@ def main() -> None:
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     application = create_application(['visual-baseline'])
+    prepare_capture_fonts(application)
     root = Path(__file__).resolve().parents[1]
     hashes = {}
     with TemporaryDirectory(prefix='focus-visual-') as temp:
