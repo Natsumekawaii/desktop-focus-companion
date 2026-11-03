@@ -22,22 +22,22 @@ def test_focus_panel_button_hover_animates_without_moving_geometry(
     original_geometry = button.geometry()
 
     qt_application.sendEvent(button, QEvent(QEvent.Type.Enter))
-    QTest.qWait(45)
+    feedback._animation.setCurrentTime(45)
 
     assert feedback.is_running
     assert 0.0 < feedback.progress < 1.0
     assert button.geometry() == original_geometry
 
-    QTest.qWait(110)
+    feedback._animation.setCurrentTime(feedback._animation.duration())
     assert not feedback.is_running
     assert feedback.progress == 1.0
     hover_style = button.styleSheet()
 
     qt_application.sendEvent(button, QEvent(QEvent.Type.Leave))
-    QTest.qWait(45)
+    feedback._animation.setCurrentTime(45)
     assert feedback.is_running
     assert button.geometry() == original_geometry
-    QTest.qWait(120)
+    feedback._animation.setCurrentTime(feedback._animation.duration())
     assert button.styleSheet() != hover_style
     assert button.geometry() == original_geometry
     panel.close()
@@ -65,13 +65,13 @@ def test_focus_panel_button_motion_never_renders_transparent_black_frames(
         for button in buttons:
             feedback = panel._button_feedback[button]
             qt_application.sendEvent(button, QEvent(QEvent.Type.Enter))
-            QTest.qWait(45)
+            feedback._animation.setCurrentTime(45)
             assert "rgba(" not in button.styleSheet()
             assert feedback._current_colors.background.alpha() == 255
             assert feedback._current_colors.border.alpha() == 255
 
             qt_application.sendEvent(button, QEvent(QEvent.Type.Leave))
-            QTest.qWait(125)
+            feedback._animation.setCurrentTime(feedback._animation.duration())
             assert "rgba(" not in button.styleSheet()
             assert feedback._current_colors.background.alpha() == 255
             assert feedback._current_colors.border.alpha() == 255
@@ -80,9 +80,9 @@ def test_focus_panel_button_motion_never_renders_transparent_black_frames(
         # opaque black rectangle when Qt reparsed rgba(..., 1).
         note = panel._note_toggle
         qt_application.sendEvent(note, QEvent(QEvent.Type.Enter))
-        QTest.qWait(130)
+        panel._button_feedback[note]._animation.setCurrentTime(120)
         qt_application.sendEvent(note, QEvent(QEvent.Type.Leave))
-        QTest.qWait(130)
+        panel._button_feedback[note]._animation.setCurrentTime(120)
         image = note.grab().toImage()
         sampled = image.pixelColor(max(1, image.width() - 18), image.height() // 2)
         assert sampled != QColor(Qt.GlobalColor.black)
@@ -103,11 +103,11 @@ def test_focus_panel_button_motion_stays_opaque_during_rapid_reversal_and_press(
     feedback = panel._button_feedback[button]
 
     qt_application.sendEvent(button, QEvent(QEvent.Type.Enter))
-    QTest.qWait(25)
+    feedback._animation.setCurrentTime(25)
     qt_application.sendEvent(button, QEvent(QEvent.Type.Leave))
-    QTest.qWait(25)
+    feedback._animation.setCurrentTime(25)
     qt_application.sendEvent(button, QEvent(QEvent.Type.Enter))
-    QTest.qWait(25)
+    feedback._animation.setCurrentTime(25)
     assert feedback._current_colors.background.alpha() == 255
 
     QTest.mousePress(button, Qt.MouseButton.LeftButton)
@@ -211,10 +211,10 @@ def test_focus_panel_motion_recolors_for_every_theme(qt_application) -> None:
                 assert feedback._current_colors.background.alpha() == 255
                 assert feedback._current_colors.border.alpha() == 255
             qt_application.sendEvent(panel._note_toggle, QEvent(QEvent.Type.Enter))
-            QTest.qWait(45)
+            panel._button_feedback[panel._note_toggle]._animation.setCurrentTime(45)
             assert "rgba(" not in panel._note_toggle.styleSheet()
             qt_application.sendEvent(panel._note_toggle, QEvent(QEvent.Type.Leave))
-            QTest.qWait(45)
+            panel._button_feedback[panel._note_toggle]._animation.setCurrentTime(45)
             assert "rgba(" not in panel._note_toggle.styleSheet()
         assert len(styles) == len(COLOR_THEMES)
     finally:

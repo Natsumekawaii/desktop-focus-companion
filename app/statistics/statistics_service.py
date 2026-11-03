@@ -4,10 +4,15 @@ from __future__ import annotations
 
 from calendar import monthrange
 from collections import defaultdict
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, tzinfo
 from enum import Enum
+from functools import wraps
+from typing import Concatenate, ParamSpec, TypeVar
 
+from app.core.timezones import system_timezone
 from app.data.focus_session_repository import FocusSessionRepository
 from app.data.models import FocusSession
 from app.statistics.time_allocation import (
@@ -138,6 +143,30 @@ class MonthlyStatistics:
     comparison_percent: float | None
 
 
+_P = ParamSpec('_P')
+_R = TypeVar('_R')
+
+
+@dataclass(frozen=True, slots=True)
+class FocusItemMetricsSnapshot:
+    totals: tuple[FocusItemTotal, ...]
+    last_records: tuple[tuple[int, datetime], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ProgressStatisticsSnapshot:
+    daily_totals: dict[date, float]
+    total_seconds: float
+
+
+def _timezone_snapshot(method: Callable[Concatenate[StatisticsService, _P], _R]) -> Callable[Concatenate[StatisticsService, _P], _R]:
+    @wraps(method)
+    def scoped(self: StatisticsService, /, *args: _P.args, **kwargs: _P.kwargs) -> _R:
+        with self.timezone_context():
+            return method(self, *args, **kwargs)
+    return scoped
+
+
 class StatisticsService:
     """Calculate date- and Focus Item-based totals from actual focus duration."""
 
@@ -147,17 +176,33 @@ class StatisticsService:
         local_timezone: tzinfo | None = None,
     ) -> None:
         self._focus_sessions = focus_session_repository
-        self._local_timezone = local_timezone or _system_local_timezone()
+        self._explicit_timezone = local_timezone
+        self._active_timezone: tzinfo | None = None
+
+    @property
+    def _local_timezone(self) -> tzinfo:
+        return self._active_timezone or self._explicit_timezone or _system_local_timezone()
+
+    @contextmanager
+    def timezone_context(self) -> Iterator[tzinfo]:
+        previous = self._active_timezone
+        self._active_timezone = self._local_timezone
+        try:
+            yield self._active_timezone
+        finally:
+            self._active_timezone = previous
 
     @property
     def local_timezone(self) -> tzinfo:
         return self._local_timezone
 
+    @_timezone_snapshot
     def today_total(self, now: datetime | None = None) -> float:
         target_day = self._local_day(now)
         sessions = self._focus_sessions.list_sessions()
         return self._totals_by_date_from_sessions(sessions).get(target_day, 0.0)
 
+    @_timezone_snapshot
     def daily_totals(self, days: int = 7, now: datetime | None = None) -> list[DailyTotal]:
         """Return a dense sequence ending on the user's current local date."""
         if days <= 0:
@@ -166,6 +211,7 @@ class StatisticsService:
         sessions = self._focus_sessions.list_sessions()
         return list(self._daily_totals_from_sessions(sessions, days, end_day))
 
+    @_timezone_snapshot
     def dashboard_snapshot(
         self, now: datetime | None = None
     ) -> DashboardStatisticsSnapshot:
@@ -200,6 +246,7 @@ class StatisticsService:
             history_sessions=sessions[:1000],
         )
 
+    @_timezone_snapshot
     def heatmap_data(
         self,
         days: int = 365,
@@ -235,6 +282,7 @@ class StatisticsService:
         )
         return HeatmapData(start_day=start_day, end_day=end_day, days=values)
 
+    @_timezone_snapshot
     def monthly_statistics(self, year: int, month: int) -> MonthlyStatistics:
         """Return one calendar month's focus overview and item distribution."""
         if not 1 <= month <= 12:
@@ -309,6 +357,7 @@ class StatisticsService:
             comparison_percent=comparison,
         )
 
+    @_timezone_snapshot
     def focus_item_totals(
         self,
         period: StatisticsPeriod = StatisticsPeriod.ALL_TIME,
@@ -353,6 +402,7 @@ class StatisticsService:
             key=lambda item: (-item.duration_seconds, item.focus_item_name.casefold()),
         ))
 
+    @_timezone_snapshot
     def sessions_for_day(
         self, target_day: date | None = None
     ) -> list[FocusSession]:
@@ -361,9 +411,11 @@ class StatisticsService:
         sessions = self._sessions_overlapping_local_days(selected_day, selected_day)
         return list(self._sessions_for_day_from_sessions(sessions, selected_day))
 
+    @_timezone_snapshot
     def total_focus_time(self) -> float:
         return sum(session.duration_seconds for session in self._focus_sessions.list_sessions())
 
+    @_timezone_snapshot
     def daily_replay(self, target_day: date | None = None) -> DailyReplaySummary:
         """Derive one factual daily summary without storing secondary data."""
 
@@ -403,6 +455,7 @@ class StatisticsService:
             hourly_seconds=tuple(hourly),
         )
 
+    @_timezone_snapshot
     def analytics_snapshot(
         self, now: datetime | None = None
     ) -> FocusAnalyticsSnapshot:
@@ -506,9 +559,29 @@ class StatisticsService:
             ),
         )
 
+    @_timezone_snapshot
     def totals_by_date(self) -> dict[date, float]:
         """Return all known local-day totals for streak and progress logic."""
         return self._totals_by_date_from_sessions(self._focus_sessions.list_sessions())
+
+    @_timezone_snapshot
+    def progress_snapshot(self) -> ProgressStatisticsSnapshot:
+        sessions = self._focus_sessions.list_sessions()
+        return ProgressStatisticsSnapshot(
+            self._totals_by_date_from_sessions(sessions),
+            sum(session.duration_seconds for session in sessions),
+        )
+
+    @_timezone_snapshot
+    def focus_item_metrics(self) -> FocusItemMetricsSnapshot:
+        sessions = self._focus_sessions.list_sessions()
+        latest: dict[int, datetime] = {}
+        for session in sessions:
+            latest.setdefault(session.focus_item_id, session.start_time.astimezone(self._local_timezone))
+        return FocusItemMetricsSnapshot(
+            self._focus_item_totals_from_sessions(sessions, StatisticsPeriod.ALL_TIME, self._local_day(None)),
+            tuple(latest.items()),
+        )
 
     def _totals_by_date_from_sessions(
         self, sessions: tuple[FocusSession, ...] | list[FocusSession]
@@ -570,7 +643,4 @@ class StatisticsService:
 
 
 def _system_local_timezone() -> tzinfo:
-    timezone_value = datetime.now().astimezone().tzinfo
-    if timezone_value is None:
-        raise RuntimeError("Unable to determine the local timezone.")
-    return timezone_value
+    return system_timezone()

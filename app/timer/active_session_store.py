@@ -10,8 +10,10 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from app.core.timezones import elapsed_seconds
 from app.data.datetime_utils import from_storage_datetime, to_storage_datetime
 from app.focus_mode import FocusMode, validate_target_duration
+from app.timer.validation import checkpoint_seconds, validate_elapsed_seconds
 
 logger = logging.getLogger(__name__)
 CHECKPOINT_VERSION = 4
@@ -42,12 +44,13 @@ class ActiveSessionCheckpoint:
         to_storage_datetime(self.last_checkpoint)
         if self.end_time is not None:
             to_storage_datetime(self.end_time)
+            if elapsed_seconds(self.start_time, self.end_time) < 0:
+                raise ValueError("Recovery checkpoint end precedes its start.")
         if self.focus_item_id <= 0 or not self.focus_item_name.strip():
             raise ValueError("Recovery checkpoint has an invalid Focus Item.")
         if not self.recovery_token.strip() or len(self.recovery_token) > 80:
             raise ValueError("Recovery checkpoint has an invalid token.")
-        if self.accumulated_seconds < 0:
-            raise ValueError("Recovery checkpoint has a negative duration.")
+        validate_elapsed_seconds(self.accumulated_seconds)
         if self.timer_state not in RECOVERABLE_STATES:
             raise ValueError("Recovery checkpoint has an unsupported timer state.")
         if self.timer_state == "PENDING" and self.end_time is None:
@@ -92,7 +95,7 @@ class ActiveSessionStore:
                     raw["subject_name"] if legacy else raw["focus_item_name"]
                 ),
                 start_time=from_storage_datetime(str(raw["start_time"])),
-                accumulated_seconds=float(raw["accumulated_seconds"]),
+                accumulated_seconds=checkpoint_seconds(raw["accumulated_seconds"]),
                 timer_state=str(raw["timer_state"]),
                 last_checkpoint=from_storage_datetime(str(raw["last_checkpoint"])),
                 end_time=(
@@ -106,7 +109,7 @@ class ActiveSessionStore:
                     else raw.get("mode", FocusMode.STOPWATCH.value)
                 ),
                 target_duration_seconds=(
-                    float(raw["target_duration_seconds"])
+                    checkpoint_seconds(raw["target_duration_seconds"])
                     if raw.get("target_duration_seconds") is not None
                     else None
                 ),
@@ -118,6 +121,7 @@ class ActiveSessionStore:
             return None
 
     def save(self, checkpoint: ActiveSessionCheckpoint) -> None:
+        checkpoint.__post_init__()
         temporary = self.path.with_suffix(".json.tmp")
         payload = asdict(checkpoint)
         payload["version"] = CHECKPOINT_VERSION
@@ -127,12 +131,15 @@ class ActiveSessionStore:
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with temporary.open("w", encoding="utf-8", newline="\n") as handle:
-                handle.write(json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
+                handle.write(json.dumps(payload, indent=2, ensure_ascii=False, allow_nan=False) + "\n")
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temporary, self.path)
         except OSError as error:
-            temporary.unlink(missing_ok=True)
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                logger.exception('Unable to remove temporary checkpoint after failed save')
             raise ActiveSessionStoreError("Unable to save active-session recovery data.") from error
 
     def clear(self) -> None:
@@ -142,7 +149,7 @@ class ActiveSessionStore:
             raise ActiveSessionStoreError("Unable to clear active-session recovery data.") from error
 
     def _preserve_corrupt(self) -> None:
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
         destination = self.path.with_name(f"active-session.corrupt-{timestamp}.json")
         try:
             shutil.move(self.path, destination)

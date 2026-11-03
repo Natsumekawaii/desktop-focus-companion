@@ -6,6 +6,7 @@ from collections import defaultdict
 from collections.abc import Sequence
 from datetime import date, datetime, time, timedelta, tzinfo
 
+from app.core.timezones import elapsed_seconds
 from app.data.models import FocusSession
 
 
@@ -16,7 +17,7 @@ def allocate_session_by_local_date(
     """Split effective duration proportionally across local midnight boundaries."""
     local_start = session.start_time.astimezone(local_timezone)
     local_end = session.end_time.astimezone(local_timezone)
-    wall_seconds = (local_end - local_start).total_seconds()
+    wall_seconds = elapsed_seconds(local_start, local_end)
     if wall_seconds <= 0 or session.duration_seconds == 0:
         return {local_start.date(): session.duration_seconds}
 
@@ -29,7 +30,7 @@ def allocate_session_by_local_date(
             time.min,
             tzinfo=local_timezone,
         )
-        overlap_seconds = (next_midnight - cursor).total_seconds()
+        overlap_seconds = elapsed_seconds(cursor, next_midnight)
         portion = session.duration_seconds * overlap_seconds / wall_seconds
         allocation[cursor.date()] = allocation.get(cursor.date(), 0.0) + portion
         remaining_duration -= portion

@@ -1,5 +1,5 @@
 #ifndef MyAppVersion
-  #define MyAppVersion "1.0.0"
+#error MyAppVersion must be supplied from app.__version__ by build-installer.ps1
 #endif
 #ifndef ProjectRoot
   #define ProjectRoot ".."

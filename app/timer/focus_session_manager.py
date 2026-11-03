@@ -19,7 +19,7 @@ from app.timer.active_session_store import (
     ActiveSessionStore,
     ActiveSessionStoreError,
 )
-from app.timer.focus_timer import FocusTimer
+from app.timer.focus_timer import FocusTimer, InvalidTimerStateError
 from app.timer.models import FocusTimerResult
 from app.timer.timer_state import TimerState
 
@@ -191,6 +191,15 @@ class FocusSessionManager:
         checkpoint = self._recovery_checkpoint
         if checkpoint is None:
             raise FocusSessionManagerError(tr("error.no_recovery"))
+        if self._timer.current_state is not TimerState.IDLE:
+            raise InvalidTimerStateError("restore", self._timer.current_state, (TimerState.IDLE,))
+        checkpoint.__post_init__()
+        # Validate on a temporary timer before changing any recovery identity.
+        if checkpoint.timer_state != 'PENDING':
+            FocusTimer().restore_paused(
+                checkpoint.start_time, checkpoint.accumulated_seconds,
+                FocusMode(checkpoint.mode), checkpoint.target_duration_seconds,
+            )
         self._active_focus_item = self._focus_items.get(
             checkpoint.focus_item_id, include_archived=True
         )

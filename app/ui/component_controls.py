@@ -430,6 +430,17 @@ class DurationPicker(QWidget):
         self._last_value = normalized
         self.valueChanged.emit(normalized)
 
+    def _include_existing_value(self, minutes: int) -> None:
+        """Extend the selectable range without clipping a saved record."""
+        if minutes <= self._maximum_minutes:
+            return
+        hours = minutes // 60
+        if hours not in self._hour_values:
+            self._hour_values = tuple(sorted((*self._hour_values, hours)))
+            self._hours_combo.addItem('', hours)
+        self._maximum_minutes = minutes
+        self.retranslate_ui()
+
     def retranslate_ui(self, _language: str | None = None) -> None:
         hours_blocked = self._hours_combo.blockSignals(True)
         minutes_blocked = self._minutes_combo.blockSignals(True)

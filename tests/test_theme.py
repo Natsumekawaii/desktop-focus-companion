@@ -88,9 +88,7 @@ def test_switching_theme_updates_global_palette_and_stylesheet_immediately(
     manager.set_theme(DEFAULT_COLOR_THEME)
 
 
-def test_theme_switch_crossfades_visible_surfaces_but_not_the_pet(
-    qt_application,
-) -> None:
+def test_theme_switch_crossfades_visible_surfaces_but_not_the_pet(qt_application, qt_wait_until) -> None:
     manager = get_theme_manager()
     manager._transition.finish_all()
     manager.set_theme("default")
@@ -124,7 +122,7 @@ def test_theme_switch_crossfades_visible_surfaces_but_not_the_pet(
         assert panel_image.pixelColor(0, 0).alpha() == 0
         assert panel_image.pixelColor(panel_image.width() // 2, panel_image.height() // 2).alpha() > 0
         assert panel_overlay._animation.duration() == 220
-        QTest.qWait(280)
+        qt_wait_until(lambda: not manager._transition.active_overlays)
         assert manager._transition.active_overlays == ()
     finally:
         manager._transition.finish_all()
@@ -205,9 +203,7 @@ def test_theme_target_capture_failure_falls_back_to_stable_instant_switch(
         manager.set_theme(DEFAULT_COLOR_THEME)
 
 
-def test_rapid_theme_switch_replaces_transition_and_same_theme_is_a_noop(
-    qt_application,
-) -> None:
+def test_rapid_theme_switch_replaces_transition_and_same_theme_is_a_noop(qt_application, qt_wait_until) -> None:
     manager = get_theme_manager()
     manager._transition.finish_all()
     manager.set_theme("default")
@@ -232,7 +228,7 @@ def test_rapid_theme_switch_replaces_transition_and_same_theme_is_a_noop(
         manager.set_theme("dark")
         assert manager._transition.active_overlays == second_overlays
         assert changed.count() == 2
-        QTest.qWait(280)
+        qt_wait_until(lambda: not manager._transition.active_overlays)
         assert manager._transition.active_overlays == ()
     finally:
         manager._transition.finish_all()
@@ -240,9 +236,7 @@ def test_rapid_theme_switch_replaces_transition_and_same_theme_is_a_noop(
         manager.set_theme(DEFAULT_COLOR_THEME)
 
 
-def test_theme_transition_closes_transients_and_does_not_block_input(
-    qt_application,
-) -> None:
+def test_theme_transition_closes_transients_and_does_not_block_input(qt_application, qt_wait_until) -> None:
     manager = get_theme_manager()
     manager._transition.finish_all()
     manager.set_theme("default")
@@ -256,7 +250,7 @@ def test_theme_transition_closes_transients_and_does_not_block_input(
     host.show()
     qt_application.processEvents()
     selector.showPopup()
-    QTest.qWait(180)
+    qt_wait_until(lambda: selector._popup_container.isVisible())
     assert selector._popup_container.isVisible()
 
     try:
@@ -267,7 +261,7 @@ def test_theme_transition_closes_transients_and_does_not_block_input(
         assert len(manager._transition.active_overlays) == 1
         QTest.mouseClick(button, Qt.MouseButton.LeftButton)
         assert clicked.count() == 1
-        QTest.qWait(280)
+        qt_wait_until(lambda: not manager._transition.active_overlays)
         assert manager._transition.active_overlays == ()
     finally:
         manager._transition.finish_all()

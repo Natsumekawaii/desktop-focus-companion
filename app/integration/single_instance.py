@@ -18,7 +18,7 @@ class _WindowsApplicationMutex:
     def __init__(self, name: str) -> None:
         self._name = name
         self._handle: int | None = None
-        self._kernel32: object | None = None
+        self._kernel32: ctypes.WinDLL | None = None
 
     def acquire(self) -> None:
         if sys.platform != "win32" or self._handle is not None:
@@ -36,7 +36,7 @@ class _WindowsApplicationMutex:
     def release(self) -> None:
         if self._handle is None or self._kernel32 is None:
             return
-        close_handle = self._kernel32.CloseHandle  # type: ignore[attr-defined]
+        close_handle = self._kernel32.CloseHandle
         close_handle.argtypes = (ctypes.c_void_p,)
         close_handle.restype = ctypes.c_int
         close_handle(self._handle)
@@ -47,12 +47,12 @@ class _WindowsApplicationMutex:
 class SingleInstanceGuard:
     """Hold a QLockFile for the complete application event-loop lifetime."""
 
-    def __init__(self, lock_path: Path) -> None:
+    def __init__(self, lock_path: Path, *, mutex_name: str = APPLICATION_MUTEX_NAME) -> None:
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = QLockFile(str(lock_path))
         self._lock.setStaleLockTime(0)
         self._acquired = False
-        self._application_mutex = _WindowsApplicationMutex(APPLICATION_MUTEX_NAME)
+        self._application_mutex = _WindowsApplicationMutex(mutex_name)
 
     def acquire(self) -> bool:
         self._acquired = self._lock.tryLock(0)

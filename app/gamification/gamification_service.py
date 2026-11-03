@@ -86,11 +86,16 @@ class GamificationService:
         self._settings.set(STREAK_MINIMUM_KEY, str(int(streak_minimum_seconds)))
 
     def snapshot(self, now: datetime | None = None) -> GamificationSnapshot:
+        with self._statistics.timezone_context():
+            return self._snapshot(now)
+
+    def _snapshot(self, now: datetime | None = None) -> GamificationSnapshot:
         local_now = now or datetime.now(tz=self._statistics.local_timezone)
         if local_now.tzinfo is None or local_now.utcoffset() is None:
             raise ValueError("Gamification reference datetime must be timezone-aware.")
         local_day = local_now.astimezone(self._statistics.local_timezone).date()
-        daily_totals = self._statistics.totals_by_date()
+        statistics = self._statistics.progress_snapshot()
+        daily_totals = statistics.daily_totals
         today_seconds = daily_totals.get(local_day, 0.0)
         goal_seconds = self.daily_goal_seconds()
         week_start = local_day - timedelta(days=local_day.weekday())
@@ -101,7 +106,7 @@ class GamificationService:
         weekly_goal = self.weekly_goal_seconds()
         minimum_seconds = self.streak_minimum_seconds()
         streak = calculate_current_streak(daily_totals, local_day, minimum_seconds)
-        total_seconds = self._statistics.total_focus_time()
+        total_seconds = statistics.total_seconds
         total_xp = int(total_seconds // 60)
         level = calculate_level(total_xp)
         return GamificationSnapshot(

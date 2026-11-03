@@ -9,6 +9,7 @@ from app.i18n import tr
 from app.timer.clock import Clock, SystemClock
 from app.timer.models import FocusTimerResult
 from app.timer.timer_state import TimerState
+from app.timer.validation import validate_elapsed_seconds
 
 
 class InvalidTimerStateError(RuntimeError):
@@ -153,10 +154,13 @@ class FocusTimer:
         self._require_state("restore", TimerState.IDLE)
         if start_time.tzinfo is None or start_time.utcoffset() is None:
             raise ValueError(tr("error.recovery_timezone"))
-        if accumulated_seconds < 0:
-            raise ValueError(tr("error.recovery_duration"))
+        accumulated_seconds = validate_elapsed_seconds(accumulated_seconds)
+        if not isinstance(mode, FocusMode):
+            raise TypeError(tr('error.focus_mode_invalid'))
         if mode is FocusMode.COUNTDOWN:
             target_duration_seconds = validate_target_duration(target_duration_seconds)
+            if accumulated_seconds > target_duration_seconds:
+                raise ValueError(tr('error.recovery_duration'))
         elif target_duration_seconds is not None:
             raise ValueError(tr("error.stopwatch_target"))
         self._start_time = start_time

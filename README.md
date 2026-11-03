@@ -80,15 +80,17 @@ See [Data safety](docs/data-safety.md) and [Database schema](docs/database.md) f
 
 ## Run from source
 
-Requirements: Windows 10/11 and 64-bit Python 3.12.
+Requirements: Windows 10/11 and 64-bit Python 3.12.10.
 
 ```powershell
 git clone https://github.com/Natsumekawaii/desktop-focus-companion.git
 cd desktop-focus-companion
 py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
-.\.venv\Scripts\python.exe main.py
+.\dev.ps1
 ```
+
+Development uses an isolated synthetic profile; exit and rerun after editing source. See [Local development](docs/development.md) for reset, fast checks and build provenance. Running `main.py` directly still uses the production profile.
 
 Run the complete quality gate:
 
@@ -100,11 +102,10 @@ Build the portable application and installer:
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -r requirements-build.txt
-.\build.ps1
 .\build-installer.ps1
 ```
 
-If Inno Setup 6 is missing, `build-installer.ps1 -InstallDependencies` can install the verified dependency explicitly. Build output is written to `dist\` and is not committed.
+If Inno Setup 6.7.3 is missing, `build-installer.ps1 -InstallDependencies` can install the verified dependency explicitly. Build output is written to `dist\` and is not committed.
 
 ## Repository layout
 
@@ -135,3 +136,5 @@ docs/       architecture, database, safety, and i18n notes
 Known limitations: only 64-bit Windows builds are provided; releases are unsigned; cloud sync, a web client, and automatic updates are not included.
 
 [Back to top](#desktop-focus-companion) · [简体中文](README.zh-CN.md)
+
+Local installers use the `-local-validation.exe` suffix and are not published releases.

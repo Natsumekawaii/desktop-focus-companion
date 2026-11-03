@@ -65,7 +65,6 @@ def test_application_runtime_starts_and_persists_changes(qt_application, tmp_pat
     assert qt_application.applicationName() == APPLICATION_NAME
     assert APPLICATION_NAME == "Desktop Focus Companion"
     assert qt_application.applicationVersion() == __version__
-    assert __version__ == "1.0.0"
     assert runtime.pet_window.windowTitle() == APPLICATION_NAME
     assert runtime.pet_window.size().width() == 240
     assert runtime.pet_window._image_label.size().height() == 120

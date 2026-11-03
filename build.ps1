@@ -1,5 +1,6 @@
 param(
-    [switch]$InstallDependencies
+    [switch]$InstallDependencies,
+    [switch]$ReleaseBuild
 )
 
 $ErrorActionPreference = 'Stop'
@@ -17,7 +18,7 @@ if (-not (Test-Path -LiteralPath $pythonPath)) {
 }
 
 if ($InstallDependencies) {
-    & $pythonPath -m pip install -r (Join-Path $projectRoot 'requirements-build.txt')
+    & $pythonPath -m pip install -r (Join-Path $projectRoot 'requirements-dev.txt') -r (Join-Path $projectRoot 'requirements-build.txt')
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
@@ -26,11 +27,22 @@ if ($LASTEXITCODE -ne 0) {
     throw 'PyInstaller is not installed. Run .\build.ps1 -InstallDependencies.'
 }
 
+Push-Location $projectRoot
+try {
+    & $pythonPath -m scripts.build_support preflight
+    if ($LASTEXITCODE -ne 0) { throw 'Build preflight failed.' }
+}
+finally { Pop-Location }
+
 foreach ($artifactRoot in $artifactRoots) {
     $expectedParent = [System.IO.Path]::GetDirectoryName($artifactRoot)
     $leaf = [System.IO.Path]::GetFileName($artifactRoot)
     if ($expectedParent -ne $resolvedProjectRoot -or $leaf -notin @('build', 'dist')) {
         throw "Refusing to clean unexpected build path: $artifactRoot"
+    }
+    if ((Test-Path -LiteralPath $artifactRoot) -and
+        ((Get-Item -LiteralPath $artifactRoot).Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+        throw "Refusing redirected build directory: $artifactRoot"
     }
     if ([System.IO.Directory]::Exists($artifactRoot)) {
         [System.IO.Directory]::Delete($artifactRoot, $true)
@@ -81,3 +93,12 @@ finally {
 
 Write-Output 'Packaged executable startup smoke test passed.'
 Write-Output "Desktop Focus Companion build created at: $outputExe"
+
+Push-Location $projectRoot
+try {
+    $manifestArguments = @('-m', 'scripts.build_support', 'manifest')
+    if ($ReleaseBuild) { $manifestArguments += '--release' }
+    & $pythonPath @manifestArguments
+    if ($LASTEXITCODE -ne 0) { throw 'Cannot record build provenance.' }
+}
+finally { Pop-Location }

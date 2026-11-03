@@ -1,26 +1,16 @@
-param()
-
+param(
+    [ValidateSet('Full', 'Fast', 'Docs')][string]$Mode = 'Full',
+    [ValidateSet('All', 'Ruff', 'Mypy', 'Tests')][string]$Stage = 'All',
+    [string[]]$Tests = @()
+)
 $ErrorActionPreference = 'Stop'
-$projectRoot = $PSScriptRoot
-$pythonPath = Join-Path $projectRoot '.venv\Scripts\python.exe'
-
+$pythonPath = Join-Path $PSScriptRoot '.venv\Scripts\python.exe'
 if (-not (Test-Path -LiteralPath $pythonPath -PathType Leaf)) {
-    throw 'Create the project virtual environment before running quality checks.'
+    throw 'Create .venv with Python 3.12.10, then install requirements-dev.txt.'
 }
-
-Push-Location $projectRoot
+Push-Location $PSScriptRoot
 try {
-    & $pythonPath -m ruff check .
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-    & $pythonPath -m mypy app main.py
-    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-    & $pythonPath -m pytest -q
+    & $pythonPath -m scripts.quality --mode $Mode --stage $Stage @Tests
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
-finally {
-    Pop-Location
-}
-
-Write-Output 'Ruff, mypy, and pytest quality gates passed.'
+finally { Pop-Location }

@@ -6,6 +6,7 @@ import math
 from dataclasses import dataclass
 from datetime import datetime
 
+from app.core.timezones import elapsed_seconds
 from app.data.focus_item_repository import FocusItemRepository
 from app.data.focus_session_repository import (
     MIN_FOCUS_DURATION_SECONDS,
@@ -46,7 +47,7 @@ class ManualFocusEntryService:
             raise ValueError(tr("error.session_duration_minimum"))
         if entry.duration_seconds % 60 != 0:
             raise ValueError(tr("error.session_duration_precision"))
-        if entry.end_time <= entry.start_time:
+        if elapsed_seconds(entry.start_time, entry.end_time) <= 0:
             raise ValueError(tr("error.session_time_order"))
         if any(
             value.second != 0 or value.microsecond != 0

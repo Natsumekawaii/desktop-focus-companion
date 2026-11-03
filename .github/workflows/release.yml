@@ -23,9 +23,10 @@ jobs:
       - name: Set up Python 3.12
         uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: "3.12.10"
           cache: pip
           cache-dependency-path: |
+            requirements.txt
             requirements-dev.txt
             requirements-build.txt
 
@@ -37,16 +38,13 @@ jobs:
 
       - name: Install Inno Setup
         shell: pwsh
-        run: choco install innosetup --no-progress --yes
+        run: choco install innosetup --version=6.7.3 --no-progress --yes
 
-      - name: Verify tag and application versions
+      - name: Verify versions, dependencies and bilingual notes before building
         shell: pwsh
-        run: |
-          $appVersion = (.\.venv\Scripts\python.exe -c "from app import __version__; print(__version__)").Trim()
-          $tagVersion = "${{ github.ref_name }}".TrimStart('v')
-          if ($tagVersion -ne $appVersion) {
-              throw "Tag version $tagVersion does not match app version $appVersion."
-          }
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: .\.venv\Scripts\python.exe -m scripts.build_support preflight --tag $env:RELEASE_TAG --compiler auto
 
       - name: Run quality gate
         shell: pwsh
@@ -54,7 +52,7 @@ jobs:
 
       - name: Build and smoke-test installer
         shell: pwsh
-        run: .\build-installer.ps1
+        run: .\build-installer.ps1 -ReleaseBuild
 
       - name: Prepare release assets
         id: assets
@@ -87,46 +85,26 @@ jobs:
           "portable=$portable" >> $env:GITHUB_OUTPUT
           "checksum=$checksum" >> $env:GITHUB_OUTPUT
 
-      - name: Publish GitHub Release
+      - name: Publish GitHub Release without replacing existing assets
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+          RELEASE_REVISION: ${{ github.sha }}
+          INSTALLER_ASSET: ${{ steps.assets.outputs.installer }}
+          PORTABLE_ASSET: ${{ steps.assets.outputs.portable }}
+          CHECKSUM_ASSET: ${{ steps.assets.outputs.checksum }}
         run: |
-          $tag = "${{ github.ref_name }}"
-          $repository = "${{ github.repository }}"
-          $englishNotes = Join-Path $PWD ".github\release-notes\$tag.md"
-          $chineseNotes = Join-Path $PWD ".github\release-notes\$tag.zh-CN.md"
-          if (-not (Test-Path -LiteralPath $englishNotes -PathType Leaf)) {
-              throw "English release notes were not found: $englishNotes"
-          }
-          if (-not (Test-Path -LiteralPath $chineseNotes -PathType Leaf)) {
-              throw "Simplified Chinese release notes were not found: $chineseNotes"
-          }
+          .\.venv\Scripts\python.exe -m scripts.publish_release $env:RELEASE_TAG $env:RELEASE_REPOSITORY $env:RELEASE_REVISION $env:INSTALLER_ASSET $env:PORTABLE_ASSET $env:CHECKSUM_ASSET
 
-          $englishBody = @(Get-Content -LiteralPath $englishNotes -Encoding utf8)
-          if ($englishBody.Count -gt 0 -and $englishBody[0] -match '^\[English\]') {
-              $englishBody = @($englishBody | Select-Object -Skip 1)
-          }
-          while ($englishBody.Count -gt 0 -and [string]::IsNullOrWhiteSpace($englishBody[0])) {
-              $englishBody = @($englishBody | Select-Object -Skip 1)
-          }
-          $publishedNotes = Join-Path $env:RUNNER_TEMP "$tag-release-notes.md"
-          $languageLinks = "[English](https://github.com/$repository/releases/tag/$tag) | [简体中文](https://github.com/$repository/blob/${{ github.sha }}/.github/release-notes/$tag.zh-CN.md)"
-          $publishedLines = @($languageLinks, '') + $englishBody
-          Set-Content -LiteralPath $publishedNotes -Value $publishedLines -Encoding utf8
-
-          $assets = @(
-              "${{ steps.assets.outputs.installer }}",
-              "${{ steps.assets.outputs.portable }}",
-              "${{ steps.assets.outputs.checksum }}"
-          )
-          gh release view $tag *> $null
-          if ($LASTEXITCODE -eq 0) {
-              gh release upload $tag @assets --clobber
-              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-              gh release edit $tag --title "Desktop Focus Companion $tag" --notes-file $publishedNotes
-              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-              exit 0
-          }
-          gh release create $tag @assets --title "Desktop Focus Companion $tag" --notes-file $publishedNotes
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Preserve failed build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-diagnostics
+          path: |
+            artifacts/quality/
+            build/installer-smoke/*.log
+            build/packaged-smoke-profile/
+          retention-days: 14

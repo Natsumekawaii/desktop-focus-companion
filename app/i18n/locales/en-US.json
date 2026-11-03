@@ -1,4 +1,13 @@
 {
+  "session_editor.end_date": "End date",
+  "session_editor.effective_duration": "Actual focus duration",
+  "session_editor.start_occurrence": "Start occurrence",
+  "session_editor.end_occurrence": "End occurrence",
+  "session_editor.occurrence": "Occurrence {count} (UTC{offset})",
+  "error.timezone_unavailable": "Unable to identify the system time zone ({name}). Check Windows time-zone settings and restart.",
+  "error.timezone_changed": "The system time zone changed. Close and reopen this editor before saving.",
+  "error.time_nonexistent": "This local time does not exist because the clock moved forward. Choose a valid time.",
+  "error.time_ambiguous": "This local time occurs twice. Select the first or second occurrence.",
   "app.name": "Desktop Focus Companion",
   "common.add": "Add",
   "common.apply": "Apply",

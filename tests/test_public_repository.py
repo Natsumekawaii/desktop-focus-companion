@@ -32,6 +32,11 @@ SCREENSHOT_NAMES = {
     "timeline.png",
 }
 THEME_SHEET_SIZE = (1332, 708)
+RELEASE_NOTE_PAIRS = tuple(
+    (path.relative_to(PROJECT_ROOT), path.relative_to(PROJECT_ROOT).with_suffix(".zh-CN.md"))
+    for path in sorted((PROJECT_ROOT / ".github" / "release-notes").glob("v*.md"))
+    if not path.name.endswith(".zh-CN.md")
+)
 BILINGUAL_MARKDOWN_PAIRS = (
     (Path("README.md"), Path("README.zh-CN.md")),
     (Path("CHANGELOG.md"), Path("CHANGELOG.zh-CN.md")),
@@ -42,10 +47,8 @@ BILINGUAL_MARKDOWN_PAIRS = (
     (Path("docs/database.md"), Path("docs/database.zh-CN.md")),
     (Path("docs/i18n.md"), Path("docs/i18n.zh-CN.md")),
     (Path("docs/verification.md"), Path("docs/verification.zh-CN.md")),
-    (
-        Path(f".github/release-notes/v{__version__}.md"),
-        Path(f".github/release-notes/v{__version__}.zh-CN.md"),
-    ),
+    (Path("docs/development.md"), Path("docs/development.zh-CN.md")),
+    *RELEASE_NOTE_PAIRS,
 )
 LANGUAGE_SECTION_MARKERS = {
     "README.md": ("## Quick start", "## 快速开始"),
@@ -57,7 +60,8 @@ LANGUAGE_SECTION_MARKERS = {
     "database.md": ("## Other retained tables", "## 其他保留表"),
     "i18n.md": ("## Implementation", "## 实现方案"),
     "verification.md": ("## 1. Quality gate", "## 1. 质量检查"),
-    f"v{__version__}.md": ("## Downloads", "## 下载"),
+    "development.md": ("## Quick loop", "## 快速验证循环"),
+    **{english.name: ("## Downloads", "## 下载") for english, _ in RELEASE_NOTE_PAIRS},
 }
 PULL_REQUEST_LANGUAGE_SWITCH = (
     "[English](https://github.com/Natsumekawaii/desktop-focus-companion/blob/"
@@ -304,6 +308,7 @@ def test_issue_forms_are_separate_and_have_matching_contracts() -> None:
 
 
 def test_public_metadata_uses_one_release_version() -> None:
+    assert re.fullmatch(r"\d+\.\d+\.\d+", __version__)
     installer = _read(Path("installer/DesktopFocusCompanion.iss"))
     for path in (
         Path("CHANGELOG.md"),
@@ -312,19 +317,20 @@ def test_public_metadata_uses_one_release_version() -> None:
         Path(f".github/release-notes/v{__version__}.zh-CN.md"),
     ):
         assert __version__ in _read(path)
-    assert f'#define MyAppVersion "{__version__}"' in installer
+    assert '#error MyAppVersion must be supplied from app.__version__' in installer
 
 
 def test_release_workflow_requires_and_links_both_note_languages() -> None:
     workflow = _read(Path(".github/workflows/release.yml"))
 
-    assert "$tag.md" in workflow
-    assert "$tag.zh-CN.md" in workflow
-    assert "English release notes were not found" in workflow
-    assert "Simplified Chinese release notes were not found" in workflow
+    from scripts.publish_release import notes_body
+    body = notes_body(f'v{__version__}', 'owner/repository', 'a' * 40)
+    assert f'v{__version__}.zh-CN.md' in body
+    assert '## Downloads' in body
+    assert '## 下载' not in body
     assert "${{ github.sha }}" in workflow
-    assert "$publishedLines = @($languageLinks, '') + $englishBody" in workflow
-    assert "gh release edit" in workflow
+    assert 'scripts.publish_release' in workflow
+    assert '--clobber' not in workflow
     assert "--generate-notes" not in workflow
 
 

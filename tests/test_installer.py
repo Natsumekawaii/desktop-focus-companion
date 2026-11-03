@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-from app import __version__
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 INSTALLER_DEFINITION = PROJECT_ROOT / "installer" / "DesktopFocusCompanion.iss"
 INSTALLER_BUILD = PROJECT_ROOT / "build-installer.ps1"
@@ -109,9 +107,11 @@ def test_installer_build_uses_canonical_version_and_runs_smoke_checks() -> None:
     assert "Get-PendingFileRenameOperations" in text
     assert "$pendingOperationsBefore" in text
     assert "$pendingOperationsAfter" in text
-    assert "A build must not create a reboot requirement." in text
+    assert "Assert-PendingQueueSafe" in text
+    assert "Wait-OwnedProcess" in text
+    assert "-Wait " not in text
     assert '"/DMyAppMutexName=$smokeMutexName"' in text
     assert "$smokeMutexName" in text
     assert "Installer was not blocked by the running-application mutex." in text
-    assert "DesktopFocusCompanion-Setup-$appVersion.exe" in text
-    assert __version__ == "1.0.0"
+    assert 'DesktopFocusCompanion-Setup-$appVersion' in text
+    assert '-local-validation' in text

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timedelta, tzinfo
+from datetime import date, datetime, time, timedelta, timezone, tzinfo
 from math import ceil, floor
 
 from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt
@@ -11,6 +11,7 @@ from PySide6.QtGui import QColor, QFont, QMouseEvent, QPainter, QPaintEvent
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
 from app.core.theme import get_theme_manager
+from app.core.timezones import elapsed_seconds
 from app.data.models import FocusSession
 from app.i18n import format_date, get_localization, tr
 from app.timer.formatting import format_compact_duration
@@ -42,7 +43,7 @@ class TimelineBlock:
 
     @property
     def duration_seconds(self) -> float:
-        return max(60.0, floor((self.end - self.start).total_seconds() / 60) * 60.0)
+        return max(60.0, floor(elapsed_seconds(self.start, self.end) / 60) * 60.0)
 
 
 class DailyTimelineWidget(QWidget):
@@ -132,7 +133,7 @@ class DailyTimelineWidget(QWidget):
                     20,
                 ),
                 Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
-                f"{hour:02d}:00",
+                self._ruler_label(hour),
             )
 
         self._layout_block_rects(track_left, track_right)
@@ -186,12 +187,12 @@ class DailyTimelineWidget(QWidget):
                 continue
             local_start = session.start_time.astimezone(self._local_timezone)
             local_end = session.end_time.astimezone(self._local_timezone)
-            clipped_start = max(local_start, day_start)
-            clipped_end = min(local_end, day_end)
-            if clipped_end <= clipped_start:
+            clipped_start = max(local_start, day_start, key=lambda value: value.timestamp())
+            clipped_end = min(local_end, day_end, key=lambda value: value.timestamp())
+            if elapsed_seconds(clipped_start, clipped_end) <= 0:
                 continue
             blocks.append(TimelineBlock(session, clipped_start, clipped_end))
-        return sorted(blocks, key=lambda block: (block.start, block.end, block.session.id))
+        return sorted(blocks, key=lambda block: (block.start.timestamp(), block.end.timestamp(), block.session.id))
 
     def _assign_overlap_lanes(self) -> None:
         group_start = 0
@@ -200,9 +201,9 @@ class DailyTimelineWidget(QWidget):
             overlap_end = self._blocks[group_start].end
             while (
                 group_end < len(self._blocks)
-                and self._blocks[group_end].start < overlap_end
+                and self._blocks[group_end].start.timestamp() < overlap_end.timestamp()
             ):
-                overlap_end = max(overlap_end, self._blocks[group_end].end)
+                overlap_end = max(overlap_end, self._blocks[group_end].end, key=lambda value: value.timestamp())
                 group_end += 1
             lane_ends: list[datetime] = []
             for block in self._blocks[group_start:group_end]:
@@ -210,7 +211,7 @@ class DailyTimelineWidget(QWidget):
                     (
                         index
                         for index, lane_end in enumerate(lane_ends)
-                        if lane_end <= block.start
+                        if lane_end.timestamp() <= block.start.timestamp()
                     ),
                     len(lane_ends),
                 )
@@ -236,11 +237,11 @@ class DailyTimelineWidget(QWidget):
             self._minute_of_selected_day(block.end) for block in self._blocks
         )
         start = max(0, floor(earliest / 60) * 60)
-        end = min(24 * 60, ceil(latest / 60) * 60)
+        end = min(self._day_minutes(), ceil(latest / 60) * 60)
         if end - start < 120:
             missing = 120 - (end - start)
             start = max(0, start - missing // 2)
-            end = min(24 * 60, start + 120)
+            end = min(self._day_minutes(), start + 120)
             start = max(0, end - 120)
         self._visible_start_minutes = start
         self._visible_end_minutes = end
@@ -266,9 +267,19 @@ class DailyTimelineWidget(QWidget):
         return QRectF(left, 0.0, width, float(self.height()))
 
     def _minute_of_selected_day(self, value: datetime) -> int:
-        if value.date() > self._selected_day:
-            return 24 * 60
-        return value.hour * 60 + value.minute
+        day_start = datetime.combine(self._selected_day, time.min, tzinfo=self._local_timezone)
+        return floor(elapsed_seconds(day_start, value) / 60)
+
+    def _day_minutes(self) -> int:
+        end = datetime.combine(self._selected_day + timedelta(days=1), time.min, tzinfo=self._local_timezone)
+        return self._minute_of_selected_day(end)
+
+    def _ruler_label(self, hour: int) -> str:
+        if hour * 60 == self._day_minutes():
+            return "24:00"
+        start = datetime.combine(self._selected_day, time.min, tzinfo=self._local_timezone)
+        value = (start.astimezone(timezone.utc) + timedelta(hours=hour)).astimezone(self._local_timezone)
+        return value.strftime("%H:%M")
 
     def _layout_block_rects(self, track_left: float, track_right: float) -> None:
         """Lay out truthful fixed-scale blocks without visual collisions."""
@@ -303,7 +314,7 @@ class DailyTimelineWidget(QWidget):
             earlier_end_y = raw_bounds[earlier_index][1]
             for later_index in range(earlier_index + 1, len(self._blocks)):
                 later = self._blocks[later_index]
-                if earlier.end > later.start:
+                if earlier.end.timestamp() > later.start.timestamp():
                     continue
                 later_rect = later.rect
                 horizontal_overlap = min(
