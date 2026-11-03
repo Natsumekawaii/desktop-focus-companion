@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import sys
@@ -31,7 +32,7 @@ from app.i18n import get_localization, tr
 from app.integration.application_preferences_controller import (
     ApplicationPreferencesController,
 )
-from app.integration.single_instance import SingleInstanceGuard
+from app.integration.single_instance import APPLICATION_MUTEX_NAME, SingleInstanceGuard
 from app.integration.startup_manager import WindowsStartupManager
 from app.integration.tray_controller import TrayController
 from app.pet.pet_asset_manager import PetAssetManager
@@ -111,7 +112,9 @@ def create_application(arguments: Sequence[str] | None = None) -> QApplication:
     return application
 
 
-def build_runtime(paths: ApplicationPaths | None = None) -> ApplicationRuntime:
+def build_runtime(
+    paths: ApplicationPaths | None = None, *, development: bool = False,
+) -> ApplicationRuntime:
     """Build the application object graph with explicit infrastructure boundaries."""
     application_paths = paths or ApplicationPaths.discover()
     application_paths.prepare_data_directory()
@@ -196,7 +199,9 @@ def build_runtime(paths: ApplicationPaths | None = None) -> ApplicationRuntime:
         session_manager=session_manager,
         quick_panel_controller=quick_panel_controller,
     )
-    startup_manager = WindowsStartupManager(application_paths.project_root)
+    startup_manager = WindowsStartupManager(
+        application_paths.project_root, allow_changes=not development,
+    )
     application_preferences_controller = ApplicationPreferencesController(
         settings_dialog=settings_dialog,
         pet_controller=pet_controller,
@@ -238,26 +243,43 @@ def build_runtime(paths: ApplicationPaths | None = None) -> ApplicationRuntime:
     )
 
 
-def run_application(arguments: Sequence[str] | None = None) -> int:
+def run_application(
+    arguments: Sequence[str] | None = None, *,
+    paths: ApplicationPaths | None = None, development: bool = False,
+) -> int:
     """Start the Desktop Focus Companion event loop and return its exit code."""
     application = create_application(arguments)
     application.setQuitOnLastWindowClosed(False)
-    paths = ApplicationPaths.discover()
-    paths.prepare_data_directory()
-    get_localization().set_language(SettingsRepository(paths.settings_path).load().language)
-    configure_logging(paths.logs_dir)
-    logging.getLogger(__name__).info("Desktop Focus Companion %s starting", __version__)
-    instance_guard = SingleInstanceGuard(paths.instance_lock_path)
-    if not instance_guard.acquire():
-        from PySide6.QtWidgets import QMessageBox
-
-        logging.getLogger(__name__).info(
-            "Second Desktop Focus Companion instance exited safely"
-        )
-        QMessageBox.information(None, tr("app.name"), tr("startup.already_running"))
-        return 0
+    instance_guard: SingleInstanceGuard | None = None
     try:
-        runtime = build_runtime(paths)
+        paths = paths or ApplicationPaths.discover()
+        paths.prepare_data_directory()
+        get_localization().set_language(SettingsRepository(paths.settings_path).load().language)
+        configure_logging(paths.logs_dir)
+        logging.getLogger(__name__).info("Desktop Focus Companion %s starting", __version__)
+        mutex_name = APPLICATION_MUTEX_NAME
+        if development:
+            suffix = hashlib.sha256(str(paths.data_dir.resolve()).casefold().encode()).hexdigest()[:16]
+            mutex_name = f'DesktopFocusCompanion-Development-{suffix}'
+        instance_guard = SingleInstanceGuard(paths.instance_lock_path, mutex_name=mutex_name)
+        if not instance_guard.acquire():
+            from PySide6.QtWidgets import QMessageBox
+
+            QMessageBox.information(None, tr("app.name"), tr("startup.already_running"))
+            return 0
+        runtime = build_runtime(paths, development=development)
+        if development:
+            def label_development(_language: str | None = None) -> None:
+                for window in (runtime.pet_window, runtime.dashboard_window, runtime.settings_dialog):
+                    window.setWindowTitle(window.windowTitle().removesuffix(' [DEV]') + ' [DEV]')
+                runtime.tray_controller.tray_icon.setToolTip(tr('app.name') + ' [DEV]')
+            get_localization().language_changed.connect(label_development)
+            label_development()
+        application.aboutToQuit.connect(runtime.pet_controller.flush_settings)
+        runtime.pet_controller.start()
+        if os.environ.get(PACKAGED_SMOKE_TEST_ENV) == "1":
+            QTimer.singleShot(1000, application.quit)
+        return application.exec()
     except Exception as startup_error:
         logging.getLogger(__name__).exception("Desktop Focus Companion startup failed")
         from PySide6.QtWidgets import QMessageBox
@@ -271,16 +293,10 @@ def run_application(arguments: Sequence[str] | None = None) -> int:
                 else tr("startup.failed")
             ),
         )
-        instance_guard.release()
         return 1
-    application.aboutToQuit.connect(runtime.pet_controller.flush_settings)
-    runtime.pet_controller.start()
-    if os.environ.get(PACKAGED_SMOKE_TEST_ENV) == "1":
-        QTimer.singleShot(1000, application.quit)
-    try:
-        return application.exec()
     finally:
         logging.getLogger(__name__).info(
             "Desktop Focus Companion %s shutting down", __version__
         )
-        instance_guard.release()
+        if instance_guard is not None:
+            instance_guard.release()

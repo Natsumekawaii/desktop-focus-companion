@@ -19,12 +19,13 @@ class StartupManagerError(RuntimeError):
 class WindowsStartupManager:
     """Manage only this application's HKCU Run value; no admin rights required."""
 
-    def __init__(self, project_root: Path) -> None:
+    def __init__(self, project_root: Path, *, allow_changes: bool = True) -> None:
         self._project_root = project_root
+        self._allow_changes = allow_changes
 
     @property
     def supported(self) -> bool:
-        return sys.platform == "win32"
+        return sys.platform == "win32" and self._allow_changes
 
     def build_command(self) -> str:
         """Return the packaged exe or development pythonw command."""

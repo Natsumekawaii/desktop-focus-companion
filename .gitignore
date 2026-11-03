@@ -5,6 +5,10 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.dev-data/
+.dev-data-initializing/
+.dev-data.lock
+artifacts/
 .coverage
 .coverage.*
 coverage.xml

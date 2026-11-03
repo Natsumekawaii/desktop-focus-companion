@@ -47,12 +47,12 @@ class _WindowsApplicationMutex:
 class SingleInstanceGuard:
     """Hold a QLockFile for the complete application event-loop lifetime."""
 
-    def __init__(self, lock_path: Path) -> None:
+    def __init__(self, lock_path: Path, *, mutex_name: str = APPLICATION_MUTEX_NAME) -> None:
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = QLockFile(str(lock_path))
         self._lock.setStaleLockTime(0)
         self._acquired = False
-        self._application_mutex = _WindowsApplicationMutex(APPLICATION_MUTEX_NAME)
+        self._application_mutex = _WindowsApplicationMutex(mutex_name)
 
     def acquire(self) -> bool:
         self._acquired = self._lock.tryLock(0)
