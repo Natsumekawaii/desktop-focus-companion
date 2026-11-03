@@ -9,6 +9,8 @@ from __future__ import annotations
 import re
 from datetime import datetime, timedelta
 
+from app.core.timezones import local_candidates
+
 
 def has_time(text: str, value: datetime) -> bool:
     for match in re.finditer(r"(?<!\d)(\d{1,2})[:：](\d{2})(?!\d)", text):
@@ -63,6 +65,20 @@ def require_time_evidence(
         raise ValueError(
             "Ask for an explicit date (YYYY-MM-DD or today/yesterday) and HH:MM time; the quoted user text does not establish this value."
         )
+    if (
+        value.tzinfo is not None
+        and len(local_candidates(value.replace(tzinfo=None), value.tzinfo)) > 1
+    ):
+        utc_offset = value.strftime("%z")
+        occurrence_words = ("第二次", "second") if value.fold else ("第一次", "first")
+        if (
+            utc_offset not in text
+            and f"{utc_offset[:3]}:{utc_offset[3:]}" not in text
+            and not any(w in text.lower() for w in occurrence_words)
+        ):
+            raise ValueError(
+                "Repeated local time: the user must choose its first/second occurrence or explicit UTC offset."
+            )
 
 
 def require_duration_evidence(

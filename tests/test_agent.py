@@ -905,3 +905,43 @@ def test_legacy_zero_width_and_paused_midnight_statistics(focus):
         "get_focus_statistics", {"start_date": "2026-11-04", "end_date": "2026-11-04"}
     )
     assert stats["record_count"] == 2 and stats["total_seconds"] == 5400
+
+
+def test_model_cannot_guess_repeated_time_offset(focus):
+    tool = tools_for(focus, "America/New_York")
+    args, text = creation(
+        focus[1], start="2026-11-01T01:30:00-05:00", end="2026-11-01T03:30:00-05:00"
+    )
+    with pytest.raises(ValueError, match="Repeated local time"):
+        tool.prepare(args, [text], True)
+    text += " Use the second occurrence."
+    args["request_quote"] = text
+    args["operations"][0]["evidence"] = dict.fromkeys(
+        args["operations"][0]["fields"], text
+    )
+    plan, _ = tool.prepare(args, [text], True)
+    assert plan.changes[0].start.fold == 1
+
+
+def test_interleaved_tool_fragments_are_ordered_by_index():
+    stream = CompletionStream()
+    for index in (1, 0):
+        stream.accept(
+            packet(
+                {
+                    "tool_calls": [
+                        {
+                            "index": index,
+                            "id": str(index),
+                            "function": {
+                                "name": "get_focus_context",
+                                "arguments": "{}",
+                            },
+                        }
+                    ]
+                }
+            )
+        )
+    stream.accept(packet({}, "tool_calls"))
+    stream.accept("[DONE]")
+    assert [c["id"] for c in stream.message()["tool_calls"]] == ["0", "1"]

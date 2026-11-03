@@ -142,7 +142,7 @@ class CompletionStream:
                 range(len(self.calls))
             ):
                 raise ValueError("Incomplete tool-call sequence.")
-            calls = list(self.calls.values())
+            calls = [self.calls[index] for index in sorted(self.calls)]
             if any(not c["id"] or not c["function"]["name"] for c in calls) or len(
                 {c["id"] for c in calls}
             ) != len(calls):
