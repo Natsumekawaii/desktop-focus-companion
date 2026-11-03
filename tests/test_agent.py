@@ -945,3 +945,24 @@ def test_interleaved_tool_fragments_are_ordered_by_index():
     stream.accept(packet({}, "tool_calls"))
     stream.accept("[DONE]")
     assert [c["id"] for c in stream.message()["tool_calls"]] == ["0", "1"]
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Show the record for Learning",
+        "What does the record show?",
+        "Explain how to add a record",
+    ],
+)
+def test_read_only_nouns_do_not_authorize_writes(controller, question):
+    controller.send(question)
+    assert len(controller.client.requests[-1]["tools"]) == 4
+
+
+@pytest.mark.parametrize("quote", ["09:00 pm", "晚上9点", "下午09:00"])
+def test_period_markers_cannot_be_ignored(quote):
+    from app.agent.evidence import has_time
+
+    assert not has_time(quote, NOW.replace(hour=9, minute=0))
+    assert has_time(quote, NOW.replace(hour=21, minute=0))

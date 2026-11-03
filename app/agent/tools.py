@@ -38,7 +38,7 @@ from app.statistics.time_allocation import allocate_session_by_local_date
 
 WRITE_INTENT = re.compile(
     r"帮我.{0,20}(?:记|删|改)|补记|记一下|记上|记到|记录下来|新增|添加|删除|删掉|移除|修改|改成|更正|更新"
-    r"|\b(?:log|record|add|create|delete|remove|edit|update|change|correct)\b",
+    r"|(?:^|[.!?]\s*|\b(?:please|can you|could you|would you|help me|I want you to)\s+)(?:log|record|add|create|delete|remove|edit|update|change|correct)\b",
     re.IGNORECASE,
 )
 READ_TOOLS = {

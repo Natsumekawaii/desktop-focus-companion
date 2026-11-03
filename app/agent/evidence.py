@@ -13,20 +13,27 @@ from app.core.timezones import local_candidates
 
 
 def has_time(text: str, value: datetime) -> bool:
+    def local_hour(hour: int, match: re.Match[str]) -> int:
+        suffix = re.match(r"\s*(am|pm)\b", text[match.end() :], re.IGNORECASE)
+        prefix = re.search(
+            r"(上午|下午|早上|晚上|晚间|凌晨)\s*$",
+            text[max(0, match.start() - 8) : match.start()],
+        )
+        if suffix and 1 <= hour <= 12:
+            return hour % 12 + (12 if suffix[1].lower() == "pm" else 0)
+        if prefix and 1 <= hour <= 12:
+            return hour % 12 + (12 if prefix[1] in {"下午", "晚上", "晚间"} else 0)
+        return hour
+
     for match in re.finditer(r"(?<!\d)(\d{1,2})[:：](\d{2})(?!\d)", text):
         hour, minute = map(int, match.groups())
+        hour = local_hour(hour, match)
         if minute == value.minute and hour == value.hour:
             return True
     for match in re.finditer(r"(?<!\d)(\d{1,2})\s*(?:点|时)(?:(\d{1,2})分?)?", text):
-        hour = int(match[1])
+        hour = local_hour(int(match[1]), match)
         minute = int(match[2] or 0)
-        if minute == value.minute and (
-            hour == value.hour
-            or (
-                hour + 12 == value.hour
-                and any(s in text for s in ("下午", "晚上", "晚间"))
-            )
-        ):
+        if minute == value.minute and hour == value.hour:
             return True
     for match in re.finditer(
         r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b", text, re.IGNORECASE
