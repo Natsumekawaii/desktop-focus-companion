@@ -32,6 +32,11 @@ SCREENSHOT_NAMES = {
     "timeline.png",
 }
 THEME_SHEET_SIZE = (1332, 708)
+RELEASE_NOTE_PAIRS = tuple(
+    (path.relative_to(PROJECT_ROOT), path.relative_to(PROJECT_ROOT).with_suffix(".zh-CN.md"))
+    for path in sorted((PROJECT_ROOT / ".github" / "release-notes").glob("v*.md"))
+    if not path.name.endswith(".zh-CN.md")
+)
 BILINGUAL_MARKDOWN_PAIRS = (
     (Path("README.md"), Path("README.zh-CN.md")),
     (Path("CHANGELOG.md"), Path("CHANGELOG.zh-CN.md")),
@@ -43,10 +48,7 @@ BILINGUAL_MARKDOWN_PAIRS = (
     (Path("docs/i18n.md"), Path("docs/i18n.zh-CN.md")),
     (Path("docs/verification.md"), Path("docs/verification.zh-CN.md")),
     (Path("docs/development.md"), Path("docs/development.zh-CN.md")),
-    (
-        Path(f".github/release-notes/v{__version__}.md"),
-        Path(f".github/release-notes/v{__version__}.zh-CN.md"),
-    ),
+    *RELEASE_NOTE_PAIRS,
 )
 LANGUAGE_SECTION_MARKERS = {
     "README.md": ("## Quick start", "## 快速开始"),
@@ -59,7 +61,7 @@ LANGUAGE_SECTION_MARKERS = {
     "i18n.md": ("## Implementation", "## 实现方案"),
     "verification.md": ("## 1. Quality gate", "## 1. 质量检查"),
     "development.md": ("## Quick loop", "## 快速验证循环"),
-    f"v{__version__}.md": ("## Downloads", "## 下载"),
+    **{english.name: ("## Downloads", "## 下载") for english, _ in RELEASE_NOTE_PAIRS},
 }
 PULL_REQUEST_LANGUAGE_SWITCH = (
     "[English](https://github.com/Natsumekawaii/desktop-focus-companion/blob/"
@@ -306,6 +308,7 @@ def test_issue_forms_are_separate_and_have_matching_contracts() -> None:
 
 
 def test_public_metadata_uses_one_release_version() -> None:
+    assert re.fullmatch(r"\d+\.\d+\.\d+", __version__)
     installer = _read(Path("installer/DesktopFocusCompanion.iss"))
     for path in (
         Path("CHANGELOG.md"),
