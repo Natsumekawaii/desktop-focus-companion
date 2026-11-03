@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -84,6 +86,20 @@ def test_bilingual_notes_remain_complete():
     assert "## Downloads" in body and "## 下载" not in body
 
 
+def test_release_bootstrap_verifies_compiler_and_keeps_the_requested_tag():
+    workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    assert "choco install" not in workflow
+    assert "https://github.com/jrsoftware/issrc/releases/download/" in workflow
+    assert "Get-FileHash $installer -Algorithm SHA256" in workflow
+    assert workflow.index("checksum mismatch") < workflow.index("Start-Process")
+    assert "/CURRENTUSER" in workflow and "WaitForExit(120000)" in workflow
+    assert "workflow_dispatch:" in workflow
+    assert "ref: refs/tags/${{ inputs.tag || github.ref_name }}" in workflow
+    assert 'git rev-parse "$($env:RELEASE_TAG)^{commit}"' in workflow
+    assert "RELEASE_REVISION: ${{ steps.source.outputs.revision }}" in workflow
+    assert "git tag -f" not in workflow
+
+
 def powershell(body):
     helper = ROOT / "scripts" / "installer_safety.ps1"
     return subprocess.run(
@@ -142,4 +158,20 @@ def test_powershell_scripts_parse_without_running_builds():
         [System.Management.Automation.Language.Parser]::ParseFile('{ROOT / name}', [ref]$null, [ref]$parseErrors) | Out-Null
         if ($parseErrors) {{ throw ($parseErrors | Out-String) }}
         """)
+        assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_release_powershell_blocks_parse_without_executing_downloads():
+    workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    blocks = re.findall(r"(?m)^        run: \|\n((?:          [^\n]*\n|\n)+)", workflow)
+    assert len(blocks) >= 5
+    for block in blocks:
+        script = textwrap.dedent(block)
+        result = powershell(
+            "$script = @'\n" + script + "\n'@\n"
+            "$parseErrors = $null\n"
+            "[System.Management.Automation.Language.Parser]::ParseInput("
+            "$script, [ref]$null, [ref]$parseErrors) | Out-Null\n"
+            "if ($parseErrors) { throw ($parseErrors | Out-String) }"
+        )
         assert result.returncode == 0, result.stdout + result.stderr

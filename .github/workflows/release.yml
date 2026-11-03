@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to build (never moved or overwritten)
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -13,12 +19,33 @@ jobs:
     name: Build Windows release
     runs-on: windows-latest
     timeout-minutes: 120
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
     steps:
+      - name: Validate release tag
+        shell: pwsh
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+$') {
+              throw 'Expected an existing vMAJOR.MINOR.PATCH tag.'
+          }
+
       - name: Check out repository
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+
+      - name: Record immutable source revision
+        id: source
+        shell: pwsh
+        run: |
+          $revision = (git rev-parse HEAD).Trim()
+          $tagRevision = (git rev-parse "$($env:RELEASE_TAG)^{commit}").Trim()
+          if ($LASTEXITCODE -ne 0 -or $revision -ne $tagRevision) {
+              throw 'Checkout does not match the requested release tag.'
+          }
+          "revision=$revision" >> $env:GITHUB_OUTPUT
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v7
@@ -36,14 +63,30 @@ jobs:
           python -m venv .venv
           .\.venv\Scripts\python.exe -m pip install --disable-pip-version-check -r requirements-dev.txt -r requirements-build.txt
 
-      - name: Install Inno Setup
+      - name: Install verified Inno Setup from its official release
         shell: pwsh
-        run: choco install innosetup --version=6.7.3 --no-progress --yes
+        run: |
+          $version = (Get-Content toolchain.json | ConvertFrom-Json).inno_setup
+          if ($version -ne '6.7.3') { throw 'Update the compiler checksum before changing versions.' }
+          # Matches the upstream release digest and Microsoft's winget manifest.
+          $expectedHash = '9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732'
+          $installer = Join-Path $env:RUNNER_TEMP 'innosetup-6.7.3.exe'
+          Invoke-WebRequest -Uri 'https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe' -OutFile $installer -TimeoutSec 120
+          if ((Get-FileHash $installer -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expectedHash) {
+              throw 'Inno Setup download checksum mismatch.'
+          }
+          $compilerRoot = Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6'
+          $process = Start-Process -FilePath $installer -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/CURRENTUSER', "/DIR=`"$compilerRoot`"") -WindowStyle Hidden -PassThru
+          if (-not $process.WaitForExit(120000)) {
+              $process.Kill()
+              throw 'Inno Setup installation timed out.'
+          }
+          if ($process.ExitCode -ne 0) { throw "Inno Setup failed: $($process.ExitCode)" }
+          if (-not (Test-Path (Join-Path $compilerRoot 'ISCC.exe'))) { throw 'Compiler not found.' }
+          $compilerRoot >> $env:GITHUB_PATH
 
       - name: Verify versions, dependencies and bilingual notes before building
         shell: pwsh
-        env:
-          RELEASE_TAG: ${{ github.ref_name }}
         run: .\.venv\Scripts\python.exe -m scripts.build_support preflight --tag $env:RELEASE_TAG --compiler auto
 
       - name: Run quality gate
@@ -89,9 +132,8 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.ref_name }}
           RELEASE_REPOSITORY: ${{ github.repository }}
-          RELEASE_REVISION: ${{ github.sha }}
+          RELEASE_REVISION: ${{ steps.source.outputs.revision }}
           INSTALLER_ASSET: ${{ steps.assets.outputs.installer }}
           PORTABLE_ASSET: ${{ steps.assets.outputs.portable }}
           CHECKSUM_ASSET: ${{ steps.assets.outputs.checksum }}

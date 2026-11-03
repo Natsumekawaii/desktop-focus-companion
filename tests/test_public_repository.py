@@ -328,7 +328,7 @@ def test_release_workflow_requires_and_links_both_note_languages() -> None:
     assert f'v{__version__}.zh-CN.md' in body
     assert '## Downloads' in body
     assert '## 下载' not in body
-    assert "${{ github.sha }}" in workflow
+    assert "${{ steps.source.outputs.revision }}" in workflow
     assert 'scripts.publish_release' in workflow
     assert '--clobber' not in workflow
     assert "--generate-notes" not in workflow

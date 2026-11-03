@@ -61,6 +61,8 @@ Local installers use the suffix `-local-validation.exe`. The portable directory 
 
 Only the separate tag workflow can publish. Existing Release assets are never overwritten: an identical asset set is a no-op, and any missing/different asset causes a failure. Development work does not imply permission to push, tag, merge or release.
 
+The release workflow downloads the pinned compiler from its official release and verifies SHA-256 before installation. If workflow bootstrap fails before publication, its manual dispatch accepts an existing version tag: a repaired workflow can build that exact tagged source without moving the tag. Release-note links use the checked-out source revision, not the workflow's revision.
+
 ## CI policy
 
 `Windows quality gate` always runs. Documentation-only changes select Docs; code, dependencies, workflows, builds and unknown diff ranges select Full. The job exposes Ruff, mypy and pytest separately and preserves diagnostics.
