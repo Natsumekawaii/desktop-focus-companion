@@ -583,6 +583,10 @@ def test_controller_cancels_pending_plan_and_limits_requests(
 ):
     args, text = creation(focus[1])
     args["operations"] *= 2
+    # Cancellation starts from an authorized batch; a single request must not
+    # be expanded into duplicate operations by the model.
+    text = "Please add two records: " + text
+    args["request_quote"] = text
     controller.send(text)
     complete_call(controller, "apply_record_changes", args)
     qt_wait_until(lambda: controller.worker is None)

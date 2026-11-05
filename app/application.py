@@ -220,6 +220,7 @@ def build_runtime(
         settings_dialog=settings_dialog,
         pet_controller=pet_controller,
         startup_manager=startup_manager,
+        dashboard_window=dashboard_window,
     )
     tray_controller = TrayController(
         icon_path=str(

@@ -84,6 +84,14 @@ def _navigation_style_sheet(tokens: ThemeTokens) -> str:
             color: {tokens.text_subtle}; font-size: {DESIGN.font_caption}px;
             font-weight: 700; padding: 12px 12px 4px 12px;
         }}
+        QToolButton#dashboardSidebarToggle {{
+            background: transparent; color: {tokens.muted};
+            border: 1px solid transparent; border-radius: 6px;
+            min-width: 30px; min-height: 30px; padding: 0;
+        }}
+        QToolButton#dashboardSidebarToggle:hover {{ background: {tokens.surface_hover}; }}
+        QToolButton#dashboardSidebarToggle:pressed {{ background: {tokens.primary_soft}; }}
+        QToolButton#dashboardSidebarToggle:focus {{ border-color: {tokens.focus_ring}; }}
         QToolButton#navigationButton, QPushButton#navigationButton,
         QPushButton#sidebarNavButton {{
             background: transparent; color: {tokens.muted};
@@ -108,6 +116,7 @@ def _navigation_style_sheet(tokens: ThemeTokens) -> str:
         QPushButton#sidebarNavButton:focus {{
             border-color: {tokens.focus_ring};
         }}
+        QFrame#sidebar QToolButton#navigationButton {{ padding: 8px; }}
 
 """
 

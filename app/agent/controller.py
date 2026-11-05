@@ -12,18 +12,21 @@ from typing import Any
 from uuid import uuid4
 
 from PySide6.QtCore import QEvent, QObject, QThread, QTimer, Signal
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 from app.agent.client import DeepSeekClient
 from app.agent.credentials import CredentialStore
 from app.agent.prompts import system_prompt, tool_definitions
 from app.agent.protocol import json_object
+from app.agent.requests import WriteRequestContext, is_supplement
 from app.agent.store import AgentStore, redact, request_history
-from app.agent.tools import WRITE_INTENT, WRITE_REFUSAL, WRITE_TOOL, FocusTools
+from app.agent.tools import WRITE_TOOL, FocusTools
+from app.agent.validation import ToolValidationError, operation_signature
 from app.core.timezones import system_timezone
 from app.data.database import Database
 from app.data.focus_record_changes import RecordChangePlan, apply_changes
 from app.i18n import get_localization, tr
+from app.ui.agent_conversations import RenameConversationDialog
 from app.ui.agent_page import AgentConfigDialog, AgentPage
 from app.ui.message_boxes import ask_confirmation
 
@@ -38,6 +41,9 @@ class ToolJob(QThread):
     def run(self) -> None:
         try:
             self.result = self.action()
+        except ToolValidationError as error:
+            self.result = {"validation_error": error.payload()}
+            self.error = str(error)
         except (
             ValueError,
             TypeError,
@@ -90,6 +96,8 @@ class AgentController(QObject):
         self.turn: dict[str, Any] | None = None
         self.tools: FocusTools | None = None
         self.worker: ToolJob | None = None
+        self._worker_conversation: str | None = None
+        self._deleting_conversation: str | None = None
         self._cancel = threading.Event()
         self._request_count = 0
         self._messages: list[dict[str, Any]] = []
@@ -99,6 +107,9 @@ class AgentController(QObject):
         ) = None
         self._write_allowed = False
         self._evidence: list[str] = []
+        self._action_context: WriteRequestContext | None = None
+        self._repair_signature: str | None = None
+        self._last_validation: dict[str, Any] | None = None
         self._zone = ""
         self._now = datetime.now(timezone.utc)
         self._active: dict[str, Any] = {}
@@ -113,6 +124,8 @@ class AgentController(QObject):
         page.stop_requested.connect(self.stop)
         page.new_requested.connect(self.new_conversation)
         page.delete_requested.connect(self.delete_conversation)
+        page.delete_conversation_requested.connect(self.delete_conversation_by_id)
+        page.rename_conversation_requested.connect(self.rename_conversation)
         page.conversation_requested.connect(self.select_conversation)
         page.configure_requested.connect(self.configure)
         page.preferences_changed.connect(self.set_preferences)
@@ -139,7 +152,7 @@ class AgentController(QObject):
 
     @property
     def busy(self) -> bool:
-        return self.worker is not None or (
+        return self._deleting_conversation is not None or self.worker is not None or (
             self.turn is not None
             and self.turn.get("status")
             in {"streaming", "thinking", "running", "awaiting_confirmation"}
@@ -151,7 +164,10 @@ class AgentController(QObject):
         return super().eventFilter(watched, event)
 
     def _render(self) -> None:
-        self.page.show_turns(self.conversation, self.turns, self.busy)
+        self.page.show_turns(
+            self.conversation, self.turns, self.busy,
+            stopping=self.busy and (self._cancel.is_set() or self._deleting_conversation is not None),
+        )
 
     def _save(self) -> None:
         if self.turn is None:
@@ -167,6 +183,8 @@ class AgentController(QObject):
             self.turn["error"] = "storage"
 
     def new_conversation(self) -> None:
+        if self._deleting_conversation is not None:
+            return
         self.stop()
         try:
             self.select_conversation(self.store.new_conversation(tr("agent.new_chat")))
@@ -174,6 +192,8 @@ class AgentController(QObject):
             self.page.notice.setText(tr("agent.error.storage"))
 
     def select_conversation(self, identity: str) -> None:
+        if self._deleting_conversation is not None:
+            return
         if identity == self.conversation:
             return
         self.stop()
@@ -222,27 +242,78 @@ class AgentController(QObject):
             self.page.notice.setText(tr("agent.error.storage"))
 
     def delete_conversation(self) -> None:
-        if not self.conversation or not ask_confirmation(
-            self.page,
-            tr("agent.delete_chat"),
-            tr("agent.delete_chat_confirm"),
-            destructive=True,
-        ):
-            return
-        self.stop()
-        if self.worker is not None:
-            self.page.notice.setText(tr("agent.wait_tool"))
-            return
+        """Compatibility entry point for deleting the active conversation."""
+        self.delete_conversation_by_id(self.conversation)
+
+    def _conversation_entry(self, identity: str) -> dict[str, Any] | None:
         try:
-            self.store.delete_conversation(self.conversation)
-            self.conversation = ""
-            conversations = self.store.conversations()
-            if conversations:
-                self.select_conversation(conversations[0]["id"])
-            else:
-                self.new_conversation()
+            entry = next((c for c in self.store.conversations() if c["id"] == identity), None)
+            if entry is None:
+                self.page.notice.setText(tr("agent.chat_missing"))
+            return entry
         except (OSError, sqlite3.Error):
             self.page.notice.setText(tr("agent.error.storage"))
+            return None
+
+    def rename_conversation(self, identity: str) -> None:
+        if self._deleting_conversation is not None:
+            return
+        entry = self._conversation_entry(identity)
+        if entry is None:
+            return
+        dialog = RenameConversationDialog(entry["title"], self.page)
+        try:
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            self.store.rename_conversation(identity, dialog.title, manual=True)
+            self.page.show_conversations(self.store.conversations(), self.conversation)
+        except ValueError:
+            self.page.notice.setText(tr("agent.chat_missing"))
+        except (OSError, sqlite3.Error):
+            self.page.notice.setText(tr("agent.error.storage"))
+        finally:
+            dialog.deleteLater()
+
+    def delete_conversation_by_id(self, identity: str) -> None:
+        if not identity or self._deleting_conversation is not None:
+            return
+        entry = self._conversation_entry(identity)
+        if entry is None or not ask_confirmation(
+            self.page,
+            tr("agent.delete_chat"),
+            tr("agent.delete_chat_named", title=entry["title"]),
+            accept_key="common.delete_action",
+            destructive=True,
+            plain_text=True,
+        ):
+            return
+        self._deleting_conversation = identity
+        if identity == self.conversation:
+            self.stop()
+        if self.worker is not None and self._worker_conversation == identity:
+            self._render()
+            return
+        self._finish_conversation_deletion()
+
+    def _finish_conversation_deletion(self) -> None:
+        identity = self._deleting_conversation
+        if identity is None:
+            return
+        try:
+            conversations = self.store.delete_conversation(identity, fallback_title=tr("agent.new_chat"))
+            self._deleting_conversation = None
+            if identity == self.conversation:
+                self.conversation, self.turns, self.turn = "", [], None
+                self.page.show_conversations(conversations, "")
+                self._render()
+                self.select_conversation(conversations[0]["id"])
+            else:
+                self.page.show_conversations(conversations, self.conversation)
+        except (OSError, sqlite3.Error):
+            self.page.notice.setText(tr("agent.error.storage"))
+        finally:
+            self._deleting_conversation = None
+            self._render()
 
     def set_preferences(self, model: str, thinking: bool) -> None:
         self.preferences.update(model=model, thinking=thinking)
@@ -279,7 +350,6 @@ class AgentController(QObject):
             return
         if not self.conversation:
             self.new_conversation()
-        previous = self.turns[-1] if self.turns else {}
         if not self.turns:
             try:
                 self.store.rename_conversation(self.conversation, text)
@@ -289,29 +359,29 @@ class AgentController(QObject):
             except (OSError, sqlite3.Error):
                 self.page.notice.setText(tr("agent.error.storage"))
                 return
-        continuing = bool(previous.get("clarification_open"))
-        self._write_allowed = bool(WRITE_INTENT.search(text)) or continuing
-        if WRITE_REFUSAL.search(text):
-            self._write_allowed = False
-            continuing = False
-        # A new analysis question ends the prior clarification authorization.
-        if not WRITE_INTENT.search(text) and any(
-            word in text.lower()
-            for word in (
-                "统计",
-                "分析",
-                "多少",
-                "哪些",
-                "总结",
-                "how much",
-                "summar",
-                "analy",
-            )
-        ):
-            self._write_allowed = False
+        new_request = WriteRequestContext.create(text)
+        if new_request is not None:
+            self._action_context = new_request
+        elif self._action_context is not None:
+            from app.data.focus_item_repository import FocusItemRepository
+
+            names = [i.name for i in FocusItemRepository(self.database).list_active()]
+            if (
+                self._action_context.state == "awaiting_details"
+                and len(self._action_context.sources) < 8
+                and is_supplement(text, names)
+            ):
+                self._action_context.add_source(text)
+            else:
+                self._action_context = None
+        self._write_allowed = self._action_context is not None
         self._evidence = (
-            [*previous.get("user_evidence", []), text][-8:] if continuing else [text]
+            list(self._action_context.sources.values())
+            if self._action_context
+            else [text]
         )
+        self._repair_signature = None
+        self._last_validation = None
         history, trimmed = request_history(self.turns)
         self._messages = [
             {
@@ -321,6 +391,7 @@ class AgentController(QObject):
                     self._zone,
                     get_localization().language,
                     self._write_allowed,
+                    self._action_context,
                 ),
             },
             *history,
@@ -338,6 +409,9 @@ class AgentController(QObject):
             "user_evidence": self._evidence,
             "clarification_open": False,
             "usage": {},
+            "request_context": self._action_context.payload()
+            if self._action_context
+            else None,
         }
         self.turns.append(self.turn)
         self._answer_text = ""
@@ -372,7 +446,8 @@ class AgentController(QObject):
                 messages,
                 tool_definitions(
                     self._write_allowed
-                    and not (self.tools and self.tools.plan_prepared)
+                    and not (self.tools and self.tools.plan_prepared),
+                    self._action_context,
                 ),
             )
         except (OSError, ValueError):
@@ -388,7 +463,7 @@ class AgentController(QObject):
                 self._render_timer.start()
 
     def _thinking(self) -> None:
-        if self.turn is not None:
+        if self.turn is not None and not self._cancel.is_set():
             self.turn["status"] = "thinking"
             if not self._render_timer.isActive():
                 self._render_timer.start()
@@ -406,6 +481,11 @@ class AgentController(QObject):
             return
         self._calls = list(calls)
         if not calls:
+            if self._last_validation is not None and not (
+                self.tools and self.tools.plan_prepared
+            ):
+                self._finish_validation(self._last_validation)
+                return
             self.turn["status"] = "completed"
             committed = any(
                 c.get("result", {}).get("status") == "committed"
@@ -414,11 +494,11 @@ class AgentController(QObject):
             self.turn["clarification_open"] = (
                 self._write_allowed
                 and not committed
-                and (
-                    "?" in message.get("content", "")
-                    or "？" in message.get("content", "")
-                )
+                and self._action_context is not None
             )
+            if self._action_context is not None:
+                self._action_context.state = "awaiting_details"
+                self.turn["request_context"] = self._action_context.payload()
             self._save_timer.stop()
             self._save()
             self._render()
@@ -435,11 +515,14 @@ class AgentController(QObject):
             raise RuntimeError("Only one tool job may run.")
         worker = ToolJob(action, self)
         self.worker = worker
+        self._worker_conversation = self.turn["conversation"] if self.turn else self.conversation
 
         def finished() -> None:
             self.worker = None
+            self._worker_conversation = None
             worker.deleteLater()
             callback(worker.result, worker.error)
+            self._finish_conversation_deletion()
             self._render()
 
         worker.finished.connect(finished)
@@ -473,8 +556,16 @@ class AgentController(QObject):
                 )
             arguments = json_object(call["function"]["arguments"])
             if card["name"] == WRITE_TOOL:
+                if (
+                    self._repair_signature is not None
+                    and operation_signature(arguments) != self._repair_signature
+                ):
+                    raise ToolValidationError("repair_changed", kind="authorization")
                 return self.tools.prepare(
-                    arguments, self._evidence, self._write_allowed
+                    arguments,
+                    self._evidence,
+                    self._write_allowed,
+                    context=self._action_context,
                 )
             return self.tools.execute(card["name"], arguments)
 
@@ -482,6 +573,48 @@ class AgentController(QObject):
             if cancellation.is_set() or self.turn is not turn:
                 return
             if error:
+                if card["name"] == WRITE_TOOL:
+                    failure = (
+                        result.get("validation_error")
+                        if isinstance(result, dict)
+                        else None
+                    )
+                    failure = failure or ToolValidationError("invalid_plan").payload()
+                    self._last_validation = failure
+                    signature = None
+                    try:
+                        signature = operation_signature(
+                            json_object(call["function"]["arguments"])
+                        )
+                    except (ValueError, TypeError):
+                        pass
+                    if (
+                        failure["category"] == "format"
+                        and self._repair_signature is None
+                        and signature is not None
+                        and not (self.tools and self.tools.plan_prepared)
+                    ):
+                        self._repair_signature = signature
+                        self._tool_result(
+                            call,
+                            card,
+                            {
+                                **failure,
+                                "retry_format": True,
+                                "instruction": "Repair FORMAT once. Keep operation kinds, record IDs, field values and count identical. Evidence must be arrays of exact {message_id, quote} user substrings; delete has no fields/evidence. No writing occurred.",
+                            },
+                            failed=True,
+                        )
+                    else:
+                        self._tool_result(
+                            call,
+                            card,
+                            {**failure, "retry_format": False},
+                            failed=True,
+                            continue_turn=False,
+                        )
+                        self._finish_validation(failure)
+                    return
                 self._tool_result(
                     call,
                     card,
@@ -490,6 +623,13 @@ class AgentController(QObject):
                 )
             elif card["name"] == WRITE_TOOL:
                 plan, preview = result
+                self._last_validation = None
+                if self._action_context is not None:
+                    self._action_context.state = (
+                        "awaiting_confirmation"
+                        if plan.requires_confirmation
+                        else "preparing"
+                    )
                 card["result"] = json.loads(
                     redact(json.dumps(preview, ensure_ascii=False))
                 )
@@ -513,6 +653,7 @@ class AgentController(QObject):
         result: dict[str, Any],
         *,
         failed: bool = False,
+        continue_turn: bool = True,
     ) -> None:
         if self.turn is None:
             return
@@ -530,7 +671,43 @@ class AgentController(QObject):
             }
         )
         self._save()
-        self._next_tool()
+        if continue_turn:
+            self._next_tool()
+
+    def _finish_validation(self, result: dict[str, Any]) -> None:
+        """Terminal guard outcomes are local facts, not a model's diagnosis."""
+        assert self.turn is not None
+        for skipped in self._calls:
+            self.turn["messages"].append(
+                {
+                    "role": "tool",
+                    "tool_call_id": skipped["id"],
+                    "content": '{"status":"cancelled"}',
+                }
+            )
+        self._calls = []
+        code = result.get("code", "invalid_plan")
+        self._answer_text = tr("agent.validation." + code)
+        self.turn["answer"] = self._answer_text
+        self.turn["status"] = "completed"
+        self.turn["validation_error"] = result
+        self.turn["messages"].append(
+            {"role": "assistant", "content": self._answer_text, "reasoning_content": ""}
+        )
+        if result.get("category") == "authorization":
+            self._action_context = None
+        if self._action_context is not None:
+            self._action_context.state = "awaiting_details"
+            self._action_context.missing_fields = (
+                [result["field"]] if result.get("field") else []
+            )
+        self.turn["clarification_open"] = self._action_context is not None
+        self.turn["request_context"] = (
+            self._action_context.payload() if self._action_context else None
+        )
+        self._save_timer.stop()
+        self._save()
+        self._render()
 
     def confirm(self, card_id: str) -> None:
         if self._pending is None or self.worker is not None or self._cancel.is_set():
@@ -556,6 +733,9 @@ class AgentController(QObject):
         self._save()  # Persist the operation ID before starting the transaction.
 
         def ready(result: Any, error: str) -> None:
+            preview = card["result"]
+            self._action_context = None
+            self._write_allowed = False
             if not error:
                 card.update(
                     status="completed", result={**result, "preview": card["result"]}
@@ -564,7 +744,15 @@ class AgentController(QObject):
             else:
                 card.update(
                     status="cancelled" if cancellation.is_set() else "failed",
-                    result={"status": "not_committed", "message": error},
+                    result={
+                        "status": "not_committed",
+                        "message": error,
+                        "code": "stale_confirmation"
+                        if "changed" in error or "overlap" in error
+                        else "invalid_plan",
+                        "category": "authorization",
+                        "preview": preview,
+                    },
                 )
             # A committed transaction stays visible even if Stop/switch raced its completion.
             try:
@@ -572,7 +760,15 @@ class AgentController(QObject):
             except (OSError, sqlite3.Error):
                 self.page.notice.setText(tr("agent.error.storage"))
             if self.turn is turn and not cancellation.is_set():
-                self._tool_result(call, card, card["result"], failed=bool(error))
+                self._tool_result(
+                    call,
+                    card,
+                    card["result"],
+                    failed=bool(error),
+                    continue_turn=not error,
+                )
+                if error:
+                    self._finish_validation(card["result"])
             elif self.conversation == turn["conversation"]:
                 self.turns = [turn if t["id"] == turn["id"] else t for t in self.turns]
 
@@ -588,6 +784,7 @@ class AgentController(QObject):
         self._cancel.set()
         self._calls = []
         self._pending = None
+        self._action_context = None
         if self.turn is not None:
             self.turn.update(status="failed", error=code)
             self._save_timer.stop()
@@ -600,6 +797,7 @@ class AgentController(QObject):
         self._save_timer.stop()
         self._pending = None
         self._calls = []
+        self._action_context = None
         if self.turn is not None and self.turn.get("status") in {
             "streaming",
             "thinking",
@@ -621,6 +819,8 @@ class AgentController(QObject):
             self.worker.wait()  # Only app exit: allow an owned transaction to finish/roll back.
 
     def configure(self) -> None:
+        if self._deleting_conversation is not None:
+            return
         self.stop()
         try:
             has_key = bool(self.credentials.read())

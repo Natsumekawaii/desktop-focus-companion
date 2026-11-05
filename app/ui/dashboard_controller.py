@@ -279,6 +279,7 @@ class DashboardController(QObject):
             self._window,
             tr("dashboard.delete_session_title"),
             tr("dashboard.delete_session_confirm"),
+            accept_key="common.delete_action",
             destructive=True,
         ):
             return

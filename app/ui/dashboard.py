@@ -33,10 +33,12 @@ from PySide6.QtCore import (
 )
 from PySide6.QtGui import (
     QColor,
+    QKeyEvent,
     QResizeEvent,
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QBoxLayout,
     QButtonGroup,
     QFrame,
     QHBoxLayout,
@@ -55,6 +57,7 @@ from PySide6.QtWidgets import (
 from app.core.icon_system import IconName, IconSystem
 from app.core.theme import get_theme_manager
 from app.data.models import FocusSession
+from app.data.settings_repository import normalize_dashboard_sidebar_mode
 from app.gamification import GamificationSnapshot
 from app.i18n import format_date, format_month_year, get_localization, tr
 from app.statistics import (
@@ -69,6 +72,12 @@ from app.statistics import (
 from app.timer.formatting import format_compact_duration
 from app.ui.agent_page import AgentPage
 from app.ui.dashboard_builders import _DashboardWindowBuilders
+from app.ui.dashboard_navigation import (
+    NavigationButton,
+    NavigationGroup,
+    SidebarFrame,
+    SidebarToggleHost,
+)
 from app.ui.dashboard_widgets import (
     _DashboardPageStack,
     _SessionTableDelegate,
@@ -90,6 +99,16 @@ class DashboardPage(IntEnum):
     AI_ASSISTANT = 6
 
 
+class _SidebarToggleButton(QToolButton):
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            if not event.isAutoRepeat():
+                self.click()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+
 class DashboardWindow(_DashboardWindowBuilders, QMainWindow):
     """Display service-owned data with consistent cards and responsive scrolling."""
 
@@ -102,10 +121,12 @@ class DashboardWindow(_DashboardWindowBuilders, QMainWindow):
     delete_session_requested = Signal(int)
     replay_requested = Signal()
     analytics_period_changed = Signal(object)
+    sidebar_mode_changed = Signal(str)
 
     def __init__(self, local_timezone: tzinfo) -> None:
         super().__init__()
         self._local_timezone = local_timezone
+        self._sidebar_mode = "auto"
         local_now = datetime.now(tz=local_timezone)
         self._month_year = local_now.year
         self._month_number = local_now.month
@@ -161,6 +182,8 @@ class DashboardWindow(_DashboardWindowBuilders, QMainWindow):
         self._tabs = self._pages
         self._history_tab_index = int(DashboardPage.HISTORY)
         self._sidebar = self._build_sidebar()
+        self._sidebar.progress_changed.connect(self._update_sidebar_progress)
+        self._sidebar.settled.connect(self._sidebar_settled)
         shell = QFrame()
         shell.setObjectName("appShell")
         shell_layout = QHBoxLayout(shell)
@@ -172,10 +195,12 @@ class DashboardWindow(_DashboardWindowBuilders, QMainWindow):
         self.set_current_page(DashboardPage.OVERVIEW)
         self._refresh_icons()
         get_theme_manager().theme_changed.connect(self._refresh_icons)
+        get_theme_manager().theme_changed.connect(self._finish_sidebar_motion)
         get_localization().language_changed.connect(self.retranslate_ui)
         self.retranslate_ui()
 
     def retranslate_ui(self, _language: str | None = None) -> None:
+        self._finish_sidebar_motion()
         self.setWindowTitle(tr("dashboard.title"))
         for index, key in enumerate((
             "dashboard.tab.overview",
@@ -600,22 +625,55 @@ class DashboardWindow(_DashboardWindowBuilders, QMainWindow):
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
         if hasattr(self, "_sidebar"):
-            self._update_navigation_mode()
+            self._update_navigation_mode(animate=self.isVisible())
 
     def show_data_error(self, area: str) -> None:
         self.statusBar().showMessage(tr("dashboard.load_error", area=tr(area)), 8000)
 
-    def _build_sidebar(self) -> QFrame:
-        sidebar = QFrame()
+    @property
+    def sidebar_mode(self) -> str:
+        return self._sidebar_mode
+
+    def set_sidebar_mode(self, mode: str) -> None:
+        """Restore a preference without treating it as a user action or saving it."""
+        self._sidebar_mode = normalize_dashboard_sidebar_mode(mode)
+        self._update_navigation_mode()
+
+    def show_sidebar_save_error(self) -> None:
+        self.statusBar().showMessage(tr("dashboard.sidebar.save_error"), 8000)
+
+    def _navigation_is_compact(self) -> bool:
+        return self._sidebar_mode == "collapsed" or (
+            self._sidebar_mode == "auto" and self.width() < 900
+        )
+
+    def _toggle_sidebar(self) -> None:
+        target = "expanded" if self._navigation_is_compact() else "collapsed"
+        self._sidebar_mode = target
+        self._update_navigation_mode(animate=True)
+        self.sidebar_mode_changed.emit(target)
+
+    def _build_sidebar(self) -> SidebarFrame:
+        sidebar = SidebarFrame()
         sidebar.setObjectName("sidebar")
         sidebar.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
         sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.setContentsMargins(12, 18, 12, 14)
+        sidebar_layout.setContentsMargins(6, 18, 6, 14)
         sidebar_layout.setSpacing(5)
+
+        self._sidebar_toggle = _SidebarToggleButton()
+        self._sidebar_toggle.setObjectName("dashboardSidebarToggle")
+        self._sidebar_toggle.setFixedSize(32, 32)
+        self._sidebar_toggle.setIconSize(QSize(20, 20))
+        self._sidebar_toggle.setCheckable(True)
+        self._sidebar_toggle.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._sidebar_toggle.clicked.connect(self._toggle_sidebar)
+        self._sidebar_toggle_host = SidebarToggleHost(self._sidebar_toggle)
+        sidebar_layout.addWidget(self._sidebar_toggle_host)
 
         self._navigation_group = QButtonGroup(self)
         self._navigation_group.setExclusive(True)
-        self._nav_buttons: dict[DashboardPage, QToolButton] = {}
+        self._nav_buttons: dict[DashboardPage, NavigationButton] = {}
         self._nav_text_keys = {
             DashboardPage.OVERVIEW: "dashboard.tab.overview",
             DashboardPage.TIMELINE: "dashboard.tab.timeline",
@@ -646,16 +704,13 @@ class DashboardWindow(_DashboardWindowBuilders, QMainWindow):
         sidebar_layout.addStretch()
         return sidebar
 
-    def _navigation_label(self) -> QLabel:
-        label = QLabel()
-        label.setObjectName("navigationGroup")
-        label.setContentsMargins(10, 0, 0, 0)
-        return label
+    def _navigation_label(self) -> NavigationGroup:
+        return NavigationGroup()
 
     def _add_navigation_button(
         self, layout: QVBoxLayout, page: DashboardPage
     ) -> None:
-        button = QToolButton()
+        button = NavigationButton()
         button.setObjectName("navigationButton")
         button.setCheckable(True)
         button.setAutoExclusive(True)
@@ -668,22 +723,51 @@ class DashboardWindow(_DashboardWindowBuilders, QMainWindow):
         self._nav_buttons[page] = button
         layout.addWidget(button)
 
-    def _update_navigation_mode(self) -> None:
-        compact = self.width() < 900
-        self._sidebar.setFixedWidth(68 if compact else 208)
+    def _update_navigation_mode(self, *, animate: bool = False) -> None:
+        compact = self._navigation_is_compact()
+        width = SidebarFrame.collapsed_width if compact else SidebarFrame.expanded_width
+        if self._sidebar.width() != width:
+            self._pages.finish_transition()
+        self._sidebar_toggle.setChecked(compact)
+        action = tr("dashboard.sidebar.expand" if compact else "dashboard.sidebar.collapse")
+        self._sidebar_toggle.setToolTip(action)
+        self._sidebar_toggle.setAccessibleName(action)
+        # Resolve breakpoint-dependent layouts once against the destination,
+        # not against every intermediate pixel of the width animation.
+        self.agent_page.set_layout_width_override(self.width() - width)
+        # Manual expansion makes a previously unreachable narrow content width
+        # possible. Reflow only this header instead of squeezing its text.
+        narrow_content = self.width() - width < 600
+        self._analytics_period_row.setDirection(
+            QBoxLayout.Direction.TopToBottom
+            if narrow_content else QBoxLayout.Direction.LeftToRight
+        )
+        self._analytics_period_row.setStretch(0, 0 if narrow_content else 1)
+        self._analytics_period_row.setAlignment(
+            self._analytics_period_control,
+            Qt.AlignmentFlag.AlignRight if narrow_content else Qt.AlignmentFlag(0),
+        )
+        for page, button in self._nav_buttons.items():
+            button.set_navigation_text(tr(self._nav_text_keys[page]))
+        self._sidebar.set_expanded(not compact, animate=animate)
+        self._update_sidebar_progress(self._sidebar.progress)
+
+    def _update_sidebar_progress(self, progress: float) -> None:
+        self._sidebar_toggle_host.set_reveal(progress)
         for label in (
             self._nav_focus_label,
             self._nav_insights_label,
             self._nav_library_label,
         ):
-            label.setVisible(not compact)
-        for page, button in self._nav_buttons.items():
-            button.setText("" if compact else tr(self._nav_text_keys[page]))
-            button.setToolButtonStyle(
-                Qt.ToolButtonStyle.ToolButtonIconOnly
-                if compact
-                else Qt.ToolButtonStyle.ToolButtonTextBesideIcon
-            )
+            label.set_reveal(progress)
+        for button in self._nav_buttons.values():
+            button.set_reveal(progress)
+
+    def _sidebar_settled(self) -> None:
+        self.agent_page.set_layout_width_override(None)
+
+    def _finish_sidebar_motion(self, _value: object = None) -> None:
+        self._sidebar.finish()
 
     def _set_trend_index(self, index: int) -> None:
         self._trend_stack.setCurrentIndex(index)
@@ -707,6 +791,7 @@ class DashboardWindow(_DashboardWindowBuilders, QMainWindow):
         return value
 
     def _refresh_icons(self) -> None:
+        self._sidebar_toggle.setIcon(IconSystem.icon(IconName.SIDEBAR))
         icons = (
             IconName.OVERVIEW,
             IconName.TIMELINE,

@@ -14,6 +14,14 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 from app.agent.evidence import require_duration_evidence, require_time_evidence
+from app.agent.requests import (
+    BATCH_INTENT,
+    WRITE_INTENT,
+    WRITE_REFUSAL,  # noqa: F401 -- compatibility export for existing imports.
+    WriteRequestContext,
+    refused,
+)
+from app.agent.validation import ToolValidationError, from_validation_error
 from app.core.timezones import elapsed_seconds, local_candidates
 from app.data.database import Database
 from app.data.datetime_utils import to_storage_datetime
@@ -36,11 +44,6 @@ from app.gamification.gamification_service import (
 )
 from app.statistics.time_allocation import allocate_session_by_local_date
 
-WRITE_INTENT = re.compile(
-    r"帮我.{0,20}(?:记|删|改)|补记|记一下|记上|记到|记录下来|新增|添加|删除|删掉|移除|修改|改成|更正|更新"
-    r"|(?:^|[.!?]\s*|\b(?:please|can you|could you|would you|help me|I want you to)\s+)(?:log|record|add|create|delete|remove|edit|update|change|correct)\b",
-    re.IGNORECASE,
-)
 READ_TOOLS = {
     "get_focus_context",
     "query_focus_records",
@@ -48,14 +51,6 @@ READ_TOOLS = {
     "get_focus_statistics",
 }
 WRITE_TOOL = "apply_record_changes"
-WRITE_REFUSAL = re.compile(
-    r"(?:不要|别|不用|不必|不需要).{0,12}(?:记|增|加|删|改|保存)|\b(?:don't|do not|never)\s+(?:log|record|add|create|delete|remove|edit|update|change|save)\b",
-    re.IGNORECASE,
-)
-BATCH_INTENT = re.compile(
-    r"批量|多条|所有|全部|(?:两|二|三|四|五|六|七|八|九|十|\d+)条|\b(?:batch|multiple|all|\d+\s+(?:records|sessions))\b",
-    re.IGNORECASE,
-)
 
 
 def integer(value: Any, name: str, minimum: int = 1) -> int:
@@ -364,12 +359,150 @@ class FocusTools:
         raise ValueError("UTC offset does not match the current local time zone.")
 
     def prepare(
-        self, arguments: dict[str, Any], user_messages: list[str], write_allowed: bool
+        self,
+        arguments: dict[str, Any],
+        user_messages: list[str],
+        write_allowed: bool,
+        *,
+        context: WriteRequestContext | None = None,
+    ) -> tuple[RecordChangePlan, dict[str, Any]]:
+        """v2 is source-addressed; legacy callers still use the strict v1 path."""
+        v2 = "request_id" in arguments
+        try:
+            if context is not None and not v2 and "request_quote" not in arguments:
+                raise ToolValidationError("format", field="request_id", kind="format")
+            if v2:
+                if (
+                    context is None
+                    or not write_allowed
+                    or arguments.get("request_id") != context.request_id
+                ):
+                    raise ToolValidationError("authorization", kind="authorization")
+                arguments = self._normalize_v2(arguments, context)
+                user_messages = list(context.sources.values())
+            if context is not None:
+                self._check_scope(arguments, context)
+            return self._prepare(
+                arguments, user_messages, write_allowed, source_checked=v2
+            )
+        except (ValueError, TypeError, KeyError) as error:
+            if context is None:  # Preserve existing direct-call exception contracts.
+                raise
+            raise from_validation_error(error) from error
+
+    def _check_scope(
+        self, arguments: dict[str, Any], context: WriteRequestContext
+    ) -> None:
+        if context.state not in {"awaiting_details", "preparing"}:
+            raise ToolValidationError("authorization", kind="authorization")
+        operations = arguments.get("operations")
+        if not isinstance(operations, list) or not 1 <= len(operations) <= 50:
+            raise ToolValidationError("batch", kind="authorization")
+        if context.batch and len(operations) < 2:
+            raise ToolValidationError("batch", kind="authorization")
+        if (
+            context.operation_count is not None
+            and len(operations) != context.operation_count
+        ):
+            raise ToolValidationError("scope", field="operations", kind="authorization")
+        for op in operations:
+            if not isinstance(op, dict) or op.get("kind") not in context.kinds:
+                raise ToolValidationError("scope", kind="authorization")
+            if (
+                op["kind"] != "create"
+                and context.target_ids
+                and op.get("record_id") not in context.target_ids
+            ):
+                raise ToolValidationError(
+                    "scope", field="record_id", kind="authorization"
+                )
+            fields = op.get("fields", {})
+            if not isinstance(fields, dict):
+                raise ToolValidationError("format", field="fields", kind="format")
+            if (
+                context.fields is not None
+                and op["kind"] == "update"
+                and set(fields) - context.fields
+            ):
+                raise ToolValidationError("scope", field="fields", kind="authorization")
+
+    def _normalize_v2(
+        self, arguments: dict[str, Any], context: WriteRequestContext
+    ) -> dict[str, Any]:
+        if set(arguments) != {"request_id", "operations"}:
+            raise ToolValidationError("format", kind="format")
+        operations = arguments.get("operations")
+        if not isinstance(operations, list) or not 1 <= len(operations) <= 50:
+            raise ToolValidationError("batch", kind="authorization")
+        normalized: list[dict[str, Any]] = []
+        for number, op in enumerate(operations):
+            path = f"operations[{number}]"
+            if not isinstance(op, dict) or set(op) - {
+                "kind",
+                "record_id",
+                "fields",
+                "evidence",
+            }:
+                raise ToolValidationError("format", field=path, kind="format")
+            kind = op.get("kind")
+            if kind == "delete":
+                if op.get("fields") or op.get("evidence"):
+                    raise ToolValidationError(
+                        "delete_format", field=path, kind="format"
+                    )
+                normalized.append(
+                    {
+                        "kind": kind,
+                        "record_id": op.get("record_id"),
+                        "fields": {},
+                        "evidence": {},
+                    }
+                )
+                continue
+            fields, evidence = op.get("fields"), op.get("evidence")
+            if (
+                not isinstance(fields, dict)
+                or not isinstance(evidence, dict)
+                or set(fields) != set(evidence)
+            ):
+                raise ToolValidationError("evidence_format", field=path, kind="format")
+            checked = {}
+            for name, refs in evidence.items():
+                if not isinstance(refs, list) or not 1 <= len(refs) <= 8:
+                    raise ToolValidationError(
+                        "evidence_format", field=f"{path}.{name}", kind="format"
+                    )
+                quotes = []
+                for ref in refs:
+                    if not isinstance(ref, dict) or set(ref) != {"message_id", "quote"}:
+                        raise ToolValidationError(
+                            "evidence_format", field=f"{path}.{name}", kind="format"
+                        )
+                    message_id, quote = ref["message_id"], ref["quote"]
+                    if (
+                        not isinstance(message_id, str)
+                        or not isinstance(quote, str)
+                        or not quote.strip()
+                        or quote not in context.sources.get(message_id, "")
+                    ):
+                        raise ToolValidationError(
+                            "evidence_format", field=f"{path}.{name}", kind="format"
+                        )
+                    quotes.append(quote)
+                checked[name] = "\n".join(quotes)
+            normalized.append({**op, "evidence": checked})
+        return {"request_quote": context.authorization, "operations": normalized}
+
+    def _prepare(
+        self,
+        arguments: dict[str, Any],
+        user_messages: list[str],
+        write_allowed: bool,
+        *,
+        source_checked: bool = False,
     ) -> tuple[RecordChangePlan, dict[str, Any]]:
         object_only(arguments, {"request_quote", "operations"})
-        if not write_allowed or any(
-            WRITE_REFUSAL.search(message) for message in user_messages
-        ):
+        if not write_allowed or any(refused(message) for message in user_messages):
             raise ValueError(
                 "No explicit user request to change records in this conversation turn. Ask first."
             )
@@ -426,7 +559,10 @@ class FocusTools:
                 if (
                     not isinstance(source, str)
                     or not source.strip()
-                    or not any(source in m for m in user_messages)
+                    or (
+                        not source_checked
+                        and not any(source in m for m in user_messages)
+                    )
                 ):
                     raise ValueError(
                         f"Missing user evidence for {field}; ask rather than inventing values."
@@ -492,6 +628,21 @@ class FocusTools:
                     elapsed_seconds(start, end),
                 )
             note = fields.get("note", original.note if original else "")
+            # Both protocols must prove the value, not only the quoted source.
+            # Legacy compatibility must not weaken write authorization.
+            if "note" in fields:
+                note_quote = evidence["note"]
+                if (note and note not in note_quote) or (
+                    not note
+                    and not re.search(
+                        r"清空|删除备注|无备注|\b(?:clear|empty|remove)\b",
+                        note_quote,
+                        re.IGNORECASE,
+                    )
+                ):
+                    raise ToolValidationError(
+                        "scope", field="note", kind="authorization"
+                    )
             if kind != "delete":
                 _validate_focus_session_values(
                     start,
@@ -509,11 +660,13 @@ class FocusTools:
                     )
                 normalize_note(note)
             overlaps: tuple[tuple[int, str], ...] = ()
+            overlapping_records = []
             if kind == "create":
+                overlapping_records = self.records.list_overlapping(start, end)
                 overlaps = tuple(
                     sorted(
                         (r.id, to_storage_datetime(r.updated_at))
-                        for r in self.records.list_overlapping(start, end)
+                        for r in overlapping_records
                     )
                 )
             change = RecordChange(
@@ -543,6 +696,9 @@ class FocusTools:
                         "note": note,
                     },
                     "overlapping_record_ids": [i for i, _ in overlaps],
+                    "overlapping_records": [
+                        record_payload(r, self.zone) for r in overlapping_records
+                    ],
                 }
             )
         plan = RecordChangePlan(

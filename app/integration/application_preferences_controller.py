@@ -4,6 +4,7 @@ from PySide6.QtCore import QObject
 
 from app.integration.startup_manager import StartupManagerError, WindowsStartupManager
 from app.pet.pet_controller import PetController
+from app.ui.dashboard import DashboardWindow
 from app.ui.settings_dialog import SettingsDialog
 
 
@@ -15,13 +16,26 @@ class ApplicationPreferencesController(QObject):
         settings_dialog: SettingsDialog,
         pet_controller: PetController,
         startup_manager: WindowsStartupManager,
+        *,
+        dashboard_window: DashboardWindow | None = None,
     ) -> None:
         super().__init__()
         self._dialog = settings_dialog
         self._pet_controller = pet_controller
         self._startup = startup_manager
+        self._dashboard = dashboard_window
         settings_dialog.application_preferences_changed.connect(self.apply)
         self._sync_dialog()
+        if dashboard_window is not None:
+            dashboard_window.set_sidebar_mode(pet_controller.settings.dashboard_sidebar_mode)
+            dashboard_window.sidebar_mode_changed.connect(self._apply_sidebar_mode)
+
+    def _apply_sidebar_mode(self, mode: str) -> None:
+        if self._dashboard is None:
+            return
+        if not self._pet_controller.update_dashboard_sidebar_mode(mode):
+            self._dashboard.set_sidebar_mode(self._pet_controller.settings.dashboard_sidebar_mode)
+            self._dashboard.show_sidebar_save_error()
 
     def apply(
         self,

@@ -98,16 +98,31 @@ class AgentStore:
                 )
             ]
 
-    def rename_conversation(self, identity: str, title: str) -> None:
+    def rename_conversation(self, identity: str, title: str, *, manual: bool = False) -> None:
+        title = title.strip()
+        if manual and (not title or len(title) > 60):
+            raise ValueError("A conversation title must contain 1–60 characters.")
+        marker = f"conversation.manual_title.{identity}"
         with self.connect() as connection:
+            if not connection.execute("SELECT 1 FROM conversations WHERE id = ?", (identity,)).fetchone():
+                raise ValueError("Conversation no longer exists.")
+            if not manual and connection.execute("SELECT 1 FROM preferences WHERE key = ?", (marker,)).fetchone():
+                return
             connection.execute(
                 "UPDATE conversations SET title = ? WHERE id = ?",
-                (redact(title[:60]), identity),
+                (redact(title)[:60], identity),
             )
+            if manual:
+                connection.execute("INSERT OR REPLACE INTO preferences VALUES (?, ?)", (marker, "true"))
 
-    def delete_conversation(self, identity: str) -> None:
+    def delete_conversation(self, identity: str, *, fallback_title: str | None = None) -> list[dict[str, Any]]:
+        """Remove a chat and its title marker atomically; optionally keep one chat."""
         with self.connect() as connection:
             connection.execute("DELETE FROM conversations WHERE id = ?", (identity,))
+            connection.execute("DELETE FROM preferences WHERE key = ?", (f"conversation.manual_title.{identity}",))
+            if fallback_title is not None and not connection.execute("SELECT 1 FROM conversations LIMIT 1").fetchone():
+                connection.execute("INSERT INTO conversations VALUES (?, ?, ?)", (str(uuid4()), redact(fallback_title[:80]), self.now()))
+            return [dict(row) for row in connection.execute("SELECT * FROM conversations ORDER BY updated DESC, id")]
 
     def turns(self, conversation: str) -> list[dict[str, Any]]:
         with self.connect() as connection:

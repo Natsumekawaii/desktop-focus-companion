@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from PySide6.QtCore import QSize, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QResizeEvent, QTextDocument
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtGui import QResizeEvent
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -16,47 +16,21 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QListWidget,
     QListWidgetItem,
     QPushButton,
     QScrollArea,
-    QSizePolicy,
-    QTextBrowser,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
 from app.agent.store import MODELS
-from app.core.theme import get_theme_manager
+from app.core.theme import DESIGN, get_theme_manager
 from app.i18n import get_localization, tr
-from app.ui.rounded_selector import RoundedComboBox
-
-
-class SafeMarkdown(QTextBrowser):
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setOpenExternalLinks(False)
-        self.setOpenLinks(False)
-        self.setFrameShape(QFrame.Shape.NoFrame)
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
-
-    def loadResource(self, resource_type: int, name: QUrl | str) -> Any:
-        return None  # Never load remote images, local files, stylesheets or URLs.
-
-    def show_markdown(self, value: str) -> None:
-        self.document().setMarkdown(value, QTextDocument.MarkdownFeature.MarkdownNoHTML)
-        self._fit()
-
-    def _fit(self) -> None:
-        self.document().setTextWidth(max(150, self.viewport().width()))
-        self.setFixedHeight(max(40, int(self.document().size().height()) + 14))
-
-    def resizeEvent(self, event: QResizeEvent) -> None:
-        super().resizeEvent(event)
-        self._fit()
+from app.ui.agent_conversations import ConversationList
+from app.ui.agent_markdown import SafeMarkdown
+from app.ui.agent_preview import ChangePreview, plain_label
+from app.ui.rounded_selector import RoundedComboBox, SelectorDensity
 
 
 class ToolCard(QFrame):
@@ -69,61 +43,41 @@ class ToolCard(QFrame):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 8, 12, 8)
         title = tr("agent.tool." + card.get("name", "apply_record_changes"))
-        status = tr("agent.state." + card.get("status", "running"))
-        button = QPushButton(f"{title} · {status}")
-        button.setCheckable(True)
-        layout.addWidget(button)
         result = card.get("result", {})
-        scope = result.get("scope", {})
-        summary_parts = []
-        if scope:
-            summary_parts.append(
-                " · ".join(
-                    str(scope[k])
-                    for k in ("start_date", "end_date", "focus_item_id", "keyword")
-                    if k in scope
-                )
-            )
-        if "total_count" in result or "record_count" in result:
-            summary_parts.append(
-                tr(
-                    "agent.record_count",
-                    count=result.get("total_count", result.get("record_count")),
-                )
-            )
-        if result.get("changes"):
-            summary_parts.append(tr("agent.change_count", count=len(result["changes"])))
-        if result.get("queried_at"):
-            summary_parts.append(tr("agent.queried_at", time=result["queried_at"]))
-        if summary_parts:
-            summary = QLabel("\n".join(summary_parts))
-            summary.setTextFormat(Qt.TextFormat.PlainText)
-            summary.setWordWrap(True)
-            summary.setObjectName("secondary")
-            layout.addWidget(summary)
-        details = QTextEdit()
-        details.setReadOnly(True)
-        details.setPlainText(
-            json.dumps(card.get("result", {}), indent=2, ensure_ascii=False)
-        )
-        details.setFixedHeight(230)
-        details.setVisible(False)
-        button.toggled.connect(details.setVisible)
-        layout.addWidget(details)
-        if card.get("status") == "awaiting_confirmation":
-            hint = QLabel(tr("agent.confirm_hint"))
-            hint.setWordWrap(True)
-            layout.addWidget(hint)
-            details.setVisible(True)
-            button.setChecked(True)
-            actions = QHBoxLayout()
-            confirm = QPushButton(tr("agent.confirm"))
-            reject = QPushButton(tr("agent.reject"))
-            confirm.clicked.connect(lambda: self.confirm_requested.emit(card["id"]))
-            reject.clicked.connect(lambda: self.reject_requested.emit(card["id"]))
-            actions.addWidget(confirm)
-            actions.addWidget(reject)
-            layout.addLayout(actions)
+        stale = result.get("code") == "stale_confirmation"
+        status = tr("agent.state." + ("expired" if stale else card.get("status", "running")))
+        self.header = plain_label(f"{title} · {status}")
+        self.header.setWordWrap(False)
+        self.header.setObjectName("agentToolHeader")
+        layout.addWidget(self.header)
+        if result.get("code"):
+            explanation = tr("agent.validation." + result["code"])
+            if explanation == "agent.validation." + result["code"]:
+                explanation = tr("agent.tool_failed")
+            self.header.setToolTip(explanation)
+            self.header.setAccessibleDescription(explanation)
+        elif card.get("status") == "failed":
+            explanation = tr("agent.tool_failed")
+            self.header.setToolTip(explanation)
+            self.header.setAccessibleDescription(explanation)
+        # Stored results remain intact for evidence/history and model continuation.
+        # Only active confirmations expose record values in the user interface.
+        if card.get("status") != "awaiting_confirmation" or stale:
+            return
+        preview = result.get("preview", result)
+        layout.addWidget(plain_label(tr("agent.change_count", count=len(preview.get("changes", [])))))
+        hint = plain_label(tr("agent.confirm_hint"))
+        layout.addWidget(hint)
+        for change in preview.get("changes", []):
+            layout.addWidget(ChangePreview(change))
+        actions = QHBoxLayout()
+        confirm = QPushButton(tr("agent.confirm"))
+        reject = QPushButton(tr("agent.reject"))
+        confirm.clicked.connect(lambda: self.confirm_requested.emit(card["id"]))
+        reject.clicked.connect(lambda: self.reject_requested.emit(card["id"]))
+        actions.addWidget(confirm)
+        actions.addWidget(reject)
+        layout.addLayout(actions)
 
 
 class TurnView(QWidget):
@@ -146,15 +100,20 @@ class TurnView(QWidget):
         layout.addWidget(self.cards_host)
         self.answer = SafeMarkdown()
         layout.addWidget(self.answer)
-        footer = QHBoxLayout()
+        # Only actionable failures need visible feedback; routine status, usage
+        # and context bookkeeping stay in the stored turn, not under the reply.
         self.status = QLabel()
+        self.status.setTextFormat(Qt.TextFormat.PlainText)
         self.status.setObjectName("secondary")
         self.status.setWordWrap(True)
+        self.status.hide()
+        layout.addWidget(self.status)
+        footer = QHBoxLayout()
+        footer.addStretch()
         self.copy = QPushButton(tr("agent.copy"))
         self.copy.clicked.connect(
             lambda: QApplication.clipboard().setText(self.content)
         )
-        footer.addWidget(self.status, 1)
         footer.addWidget(self.copy)
         layout.addLayout(footer)
         self.content = ""
@@ -167,18 +126,14 @@ class TurnView(QWidget):
             self.content = content
             self.answer.show_markdown(content)
         self.answer.setVisible(bool(content))
-        status = tr("agent.state." + turn.get("status", "completed"))
-        if turn.get("error"):
-            status += " · " + tr("agent.error." + turn["error"])
-        if turn.get("context_trimmed"):
-            status += " · " + tr("agent.context_trimmed")
-        if turn.get("usage", {}).get("total_tokens"):
-            status += " · " + tr("agent.usage", count=turn["usage"]["total_tokens"])
-        self.status.setText(status)
+        error = tr("agent.error." + turn["error"]) if turn.get("error") else ""
+        self.status.setText(error)
+        self.status.setVisible(bool(error))
         self.copy.setText(tr("agent.copy"))
         signature = (
             json.dumps(turn.get("cards", []), ensure_ascii=False)
             + get_localization().language
+            + get_theme_manager().theme_name
         )
         if self.signature != signature:
             while self.cards_layout.count():
@@ -198,6 +153,8 @@ class AgentPage(QWidget):
     stop_requested = Signal()
     new_requested = Signal()
     delete_requested = Signal()
+    delete_conversation_requested = Signal(str)
+    rename_conversation_requested = Signal(str)
     conversation_requested = Signal(str)
     configure_requested = Signal()
     preferences_changed = Signal(str, bool)
@@ -206,6 +163,9 @@ class AgentPage(QWidget):
 
     def __init__(self) -> None:
         super().__init__()
+        self._layout_width_override: int | None = None
+        self._busy = False
+        self._stopping = False
         root = QVBoxLayout(self)
         root.setContentsMargins(20, 18, 20, 18)
         header = QHBoxLayout()
@@ -219,17 +179,14 @@ class AgentPage(QWidget):
         header.addWidget(self.history_toggle)
         header.addWidget(self.configure)
         root.addLayout(header)
-        controls = QHBoxLayout()
-        self.model = RoundedComboBox()
+        self.model = RoundedComboBox(density=SelectorDensity.COMPACT)
+        self.model.setObjectName("agentComposerModel")
         for model in MODELS:
             self.model.addItem(model, model)
-        self.thinking = QCheckBox()
+        self.thinking = QPushButton()
+        self.thinking.setCheckable(True)
         self.model.currentIndexChanged.connect(self._preferences)
         self.thinking.toggled.connect(self._preferences)
-        controls.addWidget(self.model)
-        controls.addWidget(self.thinking)
-        controls.addStretch()
-        root.addLayout(controls)
         self.notice = QLabel()
         self.notice.setWordWrap(True)
         self.notice.setObjectName("secondary")
@@ -241,15 +198,14 @@ class AgentPage(QWidget):
         history_layout.setContentsMargins(0, 0, 8, 0)
         self.new_button = QPushButton()
         self.new_button.clicked.connect(self.new_requested)
-        self.delete_button = QPushButton()
-        self.delete_button.clicked.connect(self.delete_requested)
-        self.conversations = QListWidget()
+        self.conversations = ConversationList()
+        self.conversations.rename_requested.connect(self.rename_conversation_requested)
+        self.conversations.delete_requested.connect(self.delete_conversation_requested)
         self.conversations.setObjectName("agentConversations")
         self.conversations.setSpacing(3)
         self.conversations.currentItemChanged.connect(self._select)
         history_layout.addWidget(self.new_button)
         history_layout.addWidget(self.conversations, 1)
-        history_layout.addWidget(self.delete_button)
         body.addWidget(self.history)
         self.chat_scroll = QScrollArea()
         self.chat_scroll.setWidgetResizable(True)
@@ -272,15 +228,21 @@ class AgentPage(QWidget):
         self.input = QTextEdit()
         self.input.setAcceptRichText(False)
         self.input.setFixedHeight(84)
+        self.input.textChanged.connect(self._update_send_button)
         root.addWidget(self.input)
         actions = QHBoxLayout()
         self.send = QPushButton()
-        self.stop = QPushButton()
+        self.send.setObjectName("agentComposerSend")
         self.send.clicked.connect(self._send)
-        self.stop.clicked.connect(self.stop_requested)
+        # Keep the whole row stable across language, selection and request states.
+        for control in (self.model, self.thinking, self.send):
+            control.setProperty("agentComposerControl", True)
+            control.setFixedSize(160, 40)
         actions.addStretch()
-        actions.addWidget(self.stop)
-        actions.addWidget(self.send)
+        actions.setSpacing(8)
+        actions.addWidget(self.model, 0, Qt.AlignmentFlag.AlignVCenter)
+        actions.addWidget(self.thinking, 0, Qt.AlignmentFlag.AlignVCenter)
+        actions.addWidget(self.send, 0, Qt.AlignmentFlag.AlignVCenter)
         root.addLayout(actions)
         self.history_toggle.toggled.connect(
             lambda visible: self.history.setVisible(visible or self.width() >= 780)
@@ -310,9 +272,23 @@ class AgentPage(QWidget):
         self.notice.setText(tr("agent.disclosure" if enabled else "agent.setup_hint"))
 
     def _send(self) -> None:
+        if self._stopping:
+            return
+        if self._busy:
+            self._stopping = True
+            self._update_send_button()
+            self.stop_requested.emit()
+            return
         text = self.input.toPlainText().strip()
         if text:
             self.send_requested.emit(text)
+
+    def _update_send_button(self) -> None:
+        key = "agent.stopping" if self._stopping else "agent.stop" if self._busy else "agent.send"
+        self.send.setText(tr(key))
+        self.send.setToolTip(tr(key))
+        self.send.setAccessibleName(tr(key))
+        self.send.setEnabled(not self._stopping and (self._busy or bool(self.input.toPlainText().strip())))
 
     def _select(
         self, item: QListWidgetItem | None, _old: QListWidgetItem | None
@@ -323,6 +299,7 @@ class AgentPage(QWidget):
     def show_conversations(
         self, conversations: list[dict[str, Any]], selected: str
     ) -> None:
+        scroll = self.conversations.verticalScrollBar().value()
         self.conversations.blockSignals(True)
         self.conversations.clear()
         for conversation in conversations:
@@ -334,9 +311,11 @@ class AgentPage(QWidget):
             if conversation["id"] == selected:
                 self.conversations.setCurrentItem(item)
         self.conversations.blockSignals(False)
+        self.conversations.verticalScrollBar().setValue(scroll)
 
     def show_turns(
-        self, conversation: str, turns: list[dict[str, Any]], busy: bool
+        self, conversation: str, turns: list[dict[str, Any]], busy: bool,
+        *, stopping: bool = False,
     ) -> None:
         bar = self.chat_scroll.verticalScrollBar()
         follow = bar.maximum() - bar.value() < 40
@@ -355,8 +334,8 @@ class AgentPage(QWidget):
                 self._views[turn["id"]] = view
                 self.message_layout.insertWidget(self.message_layout.count() - 1, view)
             self._views[turn["id"]].update_turn(turn)
-        self.send.setEnabled(not busy)
-        self.stop.setEnabled(busy)
+        self._busy, self._stopping = busy, stopping and busy
+        self._update_send_button()
         self.model.setEnabled(not busy)
         self.thinking.setEnabled(not busy)
         if follow:
@@ -369,11 +348,11 @@ class AgentPage(QWidget):
             (self.configure, "agent.configure"),
             (self.thinking, "agent.thinking"),
             (self.new_button, "agent.new"),
-            (self.delete_button, "agent.delete_chat"),
-            (self.send, "agent.send"),
-            (self.stop, "agent.stop"),
         ):
             widget.setText(tr(key))
+        self.thinking.setToolTip(tr("agent.thinking"))
+        self.thinking.setAccessibleName(tr("agent.thinking"))
+        self._update_send_button()
         self.input.setPlaceholderText(tr("agent.placeholder"))
         self.empty_hint.setText(tr("agent.empty_hint"))
         self.notice.setText(
@@ -385,6 +364,33 @@ class AgentPage(QWidget):
     def _theme(self, *_: Any) -> None:
         t = get_theme_manager().tokens
         self.setStyleSheet(f"""
+            QComboBox[agentComposerControl="true"], QPushButton[agentComposerControl="true"] {{
+                background: {t.surface}; color: {t.text};
+                border: 1px solid {t.border}; border-radius: 10px;
+                min-height: 38px; max-height: 38px; padding: 0;
+                font-size: {DESIGN.font_body}px; font-weight: 500;
+            }}
+            QComboBox#agentComposerModel {{ padding: 0 0 0 10px; }}
+            QComboBox[agentComposerControl="true"]:hover, QPushButton[agentComposerControl="true"]:hover {{
+                background: {t.surface_hover}; border-color: {t.border_strong};
+            }}
+            QPushButton[agentComposerControl="true"]:checked {{
+                background: {t.primary_soft}; color: {t.primary}; border-color: {t.border_strong};
+            }}
+            QPushButton[agentComposerControl="true"]:pressed {{ background: {t.primary_soft}; }}
+            QPushButton#agentComposerSend {{
+                background: {t.primary}; color: {t.primary_text}; border-color: {t.primary};
+            }}
+            QPushButton#agentComposerSend:hover {{ background: {t.primary_hover}; }}
+            QPushButton#agentComposerSend:pressed {{ background: {t.primary_pressed}; }}
+            QComboBox[agentComposerControl="true"]:focus, QPushButton[agentComposerControl="true"]:focus {{
+                border-color: {t.focus_ring};
+            }}
+            QPushButton#agentComposerSend:focus {{ border-color: {t.focus_ring}; }}
+            QComboBox[agentComposerControl="true"]:disabled,
+            QPushButton[agentComposerControl="true"]:disabled, QPushButton#agentComposerSend:disabled {{
+                background: {t.surface_alt}; color: {t.disabled}; border-color: {t.separator};
+            }}
             QFrame#agentToolCard {{ background: {t.surface_alt}; border: 1px solid {t.border}; border-radius: 10px; }}
             QLabel#agentUserMessage {{ background: {t.primary_soft}; color: {t.text}; border-radius: 10px; padding: 12px; }}
             QTextBrowser {{ background: transparent; color: {t.text}; border: none; }}
@@ -394,11 +400,22 @@ class AgentPage(QWidget):
             QListWidget#agentConversations::item:hover {{ background: {t.surface_hover}; }}
             QLabel#agentEmptyHint {{ color: {t.muted}; background: {t.surface}; border: 1px solid {t.border}; border-radius: 14px; padding: 32px 20px; margin-top: 24px; }}
         """)
+        for turn in self._last_turns:
+            self._views[turn["id"]].update_turn(turn)
 
     def resizeEvent(self, event: QResizeEvent) -> None:
         super().resizeEvent(event)
-        self.history.setVisible(self.width() >= 780 or self.history_toggle.isChecked())
-        self.history_toggle.setVisible(self.width() < 780)
+        self._update_history_visibility()
+
+    def set_layout_width_override(self, width: int | None) -> None:
+        """Hold responsive mode at the sidebar destination during live resizing."""
+        self._layout_width_override = width
+        self._update_history_visibility()
+
+    def _update_history_visibility(self) -> None:
+        width = self.width() if self._layout_width_override is None else self._layout_width_override
+        self.history.setVisible(width >= 780 or self.history_toggle.isChecked())
+        self.history_toggle.setVisible(width < 780)
 
 
 class AgentConfigDialog(QDialog):
