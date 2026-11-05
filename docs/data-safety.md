@@ -47,3 +47,19 @@ Missing/corrupt custom resources fall back to the bundled default while the appl
 ## Deliberately absent backup scope
 
 Desktop Focus Companion does not provide scheduled backup, ZIP backup, manifest, retention, restore manager, backup history, or CSV export.
+
+## Optional AI and data leaving the device
+
+The development-only DeepSeek assistant is disabled by default. No model or completion request is made on startup. Explicit Key testing calls only the official model-list endpoint; sending a chat after consent calls the official HTTPS completion endpoint. Conversations and the relevant focus records, names and optionally notes are transmitted to DeepSeek, not an entire database file. API charges and the provider's data handling apply. No third-party proxy is configurable.
+
+Each data profile stores chats and non-secret preferences in `agent/conversations.sqlite3`. Deleting a chat never deletes focus records; it does not request deletion of data already processed by the provider. Chat files are ordinary local SQLite, not encrypted. There is no cross-conversation memory. Only complete turns are sent as prior context; older turns may be omitted while remaining available locally.
+
+Keys use Windows Credential Manager with a target derived from the resolved data directory. Development and installed profiles cannot read each other's Key or chats. If secure storage fails, the Key remains in memory for that run and AI is disabled again after restart. Never paste a Key into a chat or issue. Use AI configuration to remove a stored Key before deleting the data profile. Normal uninstall preserves user data and credentials; it does not silently revoke your DeepSeek Key.
+
+Only allowlisted record operations are available: no SQL, shell, arbitrary files, settings, project management or timer control. Model text and database notes are not authorization. A complete single creation can save automatically; updates, deletions, overlapping creations and every batch require an explicit preview confirmation. Ambiguous fields require clarification. Maximums are 50 changes per plan, one plan per turn and eight completion requests per turn.
+
+The client keeps unfinished write scope only in memory. Related follow-up details may complete it, but cancellation, another topic, switching chats, closing the window or restarting removes that permission. Saved chat text cannot restore it. Field evidence must reference real user-message fragments. One pre-plan format correction may adjust evidence syntax or remove redundant delete parameters without changing the requested values, targets or count. It cannot bypass missing facts, duration conflicts or confirmation, and never replays a committed write. Confirmations expose the complete batch and readable changes; expired previews are disabled.
+
+`apply_changes` validates exact record/item snapshots, the time zone and overlap set inside a SQLite transaction, preserves unchanged effective duration and timer metadata, and stores a minimal idempotency receipt in the existing settings table. The main database schema stays at v5. Cancellation before commit rolls back the batch. A committed transaction is never undone by Stop or a network failure; its receipt repairs an interrupted chat status after restart, without replaying the operation. Tool previews may contain private record data, so screenshots should use synthetic profiles.
+
+Markdown cannot execute HTML or fetch images/files. Network headers, keys, completion bodies and reasoning are not logged. Reasoning content is kept privately with the local conversation because DeepSeek requires it for tool continuation; the interface only shows thinking status. Redaction is defense in depth, not permission to put secrets in project notes or chat.

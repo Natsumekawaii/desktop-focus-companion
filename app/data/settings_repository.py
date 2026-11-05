@@ -45,6 +45,7 @@ class AppSettings:
     color_theme: str = DEFAULT_COLOR_THEME
     default_focus_mode: str = FocusMode.STOPWATCH.value
     default_focus_target_seconds: int = 25 * 60
+    dashboard_sidebar_mode: str = "auto"
 
     @classmethod
     def from_mapping(cls, values: dict[str, Any]) -> AppSettings:
@@ -61,6 +62,9 @@ class AppSettings:
             language=_language(values.get("language")),
             color_theme=normalize_color_theme(
                 values.get("color_theme", values.get(LEGACY_THEME_SETTING_KEY))
+            ),
+            dashboard_sidebar_mode=normalize_dashboard_sidebar_mode(
+                values.get("dashboard_sidebar_mode")
             ),
             default_focus_mode=_focus_mode(values.get("default_focus_mode")),
             default_focus_target_seconds=_focus_target(
@@ -125,6 +129,10 @@ class SettingsRepository:
             logger.warning("Corrupted settings preserved at %s", destination)
         except OSError:
             logger.exception("Unable to preserve corrupted settings file")
+
+
+def normalize_dashboard_sidebar_mode(value: object) -> str:
+    return value if isinstance(value, str) and value in {"auto", "expanded", "collapsed"} else "auto"
 
 
 def _optional_integer(value: object) -> int | None:

@@ -2,6 +2,18 @@
 
 # Desktop Focus Companion 1.0 架构说明
 
+## 可选助手边界（开发分支）
+
+`DashboardPage.AI_ASSISTANT` 追加为索引 6，前六个索引和 Controller 保持既有接口。`AgentPage` 只呈现会话、Markdown、状态／来源卡和确认界面；`AgentController` 管理唯一活动回合、请求上限、用户同意、取消和当前配置内的聊天历史，控件不直接执行数据库或网络命令。
+
+`DeepSeekClient` 使用异步 `QNetworkAccessManager` 和有大小限制的增量 SSE 解析器。完整事件收到后才解码 UTF-8，未完成的工具调用、非法 JSON、异常结束和重定向主机均不能触发执行。网络请求和已提交操作不自动重放。DeepSeek 工具续接需要的 `reasoning_content` 保留在完整协议轮次中，但不显示为回答。只允许官方 HTTPS 域名，并显式验证模型可用性。
+
+`WriteRequestContext` 管理临时请求 ID、授权操作／字段／记录范围和带编号的用户消息。它只延续相关追问，停止、切换会话或重启后均失效。v2 工具绑定该 ID，分别核验原样消息片段与字段语义；旧格式仍须通过原有安全检查。结构化校验错误包含稳定错误码、字段路径和类别。计划生成前 Controller 最多允许一次操作签名不变的格式纠正；信息缺失、冲突和过期确认不重试。`ChangePreview` 呈现可读的修改前后字段，原始工具 JSON 默认折叠。
+
+`FocusTools` 在受管理的 `QThread` 中运行，使用独立数据库连接，每轮固定一个 IANA 时区。查询采用已验证过滤条件、有上限的游标分页和全量本地汇总，复用 UTC 跨午夜分配规则。Controller 在界面线程快照当前计时状态，只读提供给工具，不把活动 Qt 计时器传入工作线程。成功写入后沿既有刷新信号同步所有统计界面。
+
+`evidence.py` 保守核对变更值是否来自用户消息，而不是记录备注。`focus_record_changes.apply_changes` 独立保证整批事务、完整快照／时区校验、必要确认、操作条数上限和现有 settings 表中的持久 UUID 回执。重启后旧计划不可执行；回执可以修正崩溃后的聊天卡片，但不会再次操作。独立的 `agent/conversations.sqlite3` 保存聊天和偏好，不迁移主数据库，不使用明文 JSON 凭据回退。参见 [数据安全](data-safety.zh-CN.md#可选-ai-与离开设备的数据)。
+
 Desktop Focus Companion 是一套本地优先的 PySide6 个人专注系统。桌面伙伴只承担展示和快捷入口职责，不编码专注状态、目标、连续专注或统计逻辑。
 
 ## 组合根

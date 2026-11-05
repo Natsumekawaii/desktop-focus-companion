@@ -175,7 +175,10 @@ def test_countdown_ring_smooths_visual_progress_but_keeps_true_value(
     qt_application.processEvents()
     ring.set_display(0.0, "25:00", "Remaining")
     ring.set_display(0.8, "20:00", "Remaining")
-    QTest.qWait(55)
+    # Check interpolation deterministically instead of depending on frame
+    # scheduling while the full Qt suite is running.
+    assert ring._progress_animation.duration() == 180
+    ring._progress_animation.setCurrentTime(55)
 
     assert ring.progress == 0.8
     assert ring.is_progress_animating
@@ -183,7 +186,7 @@ def test_countdown_ring_smooths_visual_progress_but_keeps_true_value(
     assert ring._primary_text == "20:00"
 
     ring.set_display(0.9, "18:00", "Remaining")
-    QTest.qWait(200)
+    ring._progress_animation.setCurrentTime(ring._progress_animation.duration())
     assert not ring.is_progress_animating
     assert ring.progress == ring.display_progress == 0.9
 

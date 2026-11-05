@@ -14,6 +14,7 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
 from app import __version__
+from app.agent.controller import AgentController
 from app.application_controller import ApplicationController
 from app.core.app_icon_manager import AppIconError, AppIconManager
 from app.core.logging_config import configure_logging
@@ -75,6 +76,7 @@ class ApplicationRuntime:
     statistics_service: StatisticsService
     dashboard_window: DashboardWindow
     dashboard_controller: DashboardController
+    agent_controller: AgentController
     gamification_repository: GamificationRepository
     gamification_service: GamificationService
     gamification_controller: GamificationController
@@ -179,6 +181,18 @@ def build_runtime(
     quick_panel_controller.session_finished.connect(lambda _: dashboard_controller.refresh())
     quick_panel_controller.focus_items_changed.connect(dashboard_controller.refresh)
     dashboard_controller.data_changed.connect(quick_panel_controller.refresh_summary)
+    agent_controller = AgentController(
+        dashboard_window.agent_page, application_paths.data_dir, database,
+        lambda: {
+            "state": session_manager.current_state.value,
+            "elapsed_seconds": session_manager.elapsed_seconds,
+            "focus_item_id": session_manager.active_focus_item.id if session_manager.active_focus_item else None,
+            "mode": session_manager.mode.value,
+            "target_duration_seconds": session_manager.target_duration_seconds,
+        },
+        parent=dashboard_window,
+    )
+    agent_controller.records_changed.connect(dashboard_controller._after_data_change)
     gamification_service = GamificationService(
         statistics_service=statistics_service,
         settings_repository=database_settings_repository,
@@ -206,6 +220,7 @@ def build_runtime(
         settings_dialog=settings_dialog,
         pet_controller=pet_controller,
         startup_manager=startup_manager,
+        dashboard_window=dashboard_window,
     )
     tray_controller = TrayController(
         icon_path=str(
@@ -234,6 +249,7 @@ def build_runtime(
         statistics_service=statistics_service,
         dashboard_window=dashboard_window,
         dashboard_controller=dashboard_controller,
+        agent_controller=agent_controller,
         gamification_repository=gamification_repository,
         gamification_service=gamification_service,
         gamification_controller=gamification_controller,

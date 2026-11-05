@@ -320,6 +320,7 @@ class _DashboardWindowBuilders:
 
         distribution_card = self._card("analytics.distribution.title")
         period_row = QHBoxLayout()
+        self._analytics_period_row = period_row
         period_hint = QLabel(tr("analytics.distribution.hint"))
         period_hint.setObjectName("secondary")
         period_hint.setWordWrap(True)

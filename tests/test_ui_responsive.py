@@ -26,13 +26,14 @@ def test_dashboard_reflows_without_horizontal_page_scrolling(qt_application) -> 
             localization.set_language(language)
             window = DashboardWindow(timezone.utc)
             for width, height, expected_sidebar in (
-                (760, 520, 68),
-                (1024, 640, 208),
-                (1280, 800, 208),
+                (760, 520, 52),
+                (1024, 640, 160),
+                (1280, 800, 160),
             ):
                 window.resize(width, height)
                 window.show()
                 qt_application.processEvents()
+                window._sidebar.finish()
                 assert window._sidebar.width() == expected_sidebar
                 assert window._sidebar.findChild(QLabel, "sidebarBrand") is None
                 overview = window._pages.widget(int(DashboardPage.OVERVIEW))

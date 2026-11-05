@@ -16,6 +16,7 @@ from app.data.settings_repository import (
     AppSettings,
     SettingsRepository,
     SettingsSaveError,
+    normalize_dashboard_sidebar_mode,
 )
 from app.focus_mode import FocusMode, validate_target_duration
 from app.i18n.translator import (
@@ -137,6 +138,15 @@ class PetController(QObject):
         self._settings_dialog.set_color_theme(target)
         self.color_theme_updated.emit(target)
         return True
+
+    def update_dashboard_sidebar_mode(self, mode: str) -> bool:
+        """Merge into the one settings snapshot; the initiating window shows errors."""
+        target = normalize_dashboard_sidebar_mode(mode)
+        if target == self._settings.dashboard_sidebar_mode:
+            return True
+        return self._persist_immediately(
+            replace(self._settings, dashboard_sidebar_mode=target), show_errors=False
+        )
 
     def update_focus_timer_preferences(self, mode: str, target_minutes: int) -> bool:
         try:
@@ -272,12 +282,13 @@ class PetController(QObject):
             self._settings.notifications_enabled,
         )
 
-    def _persist_immediately(self, settings: AppSettings) -> bool:
+    def _persist_immediately(self, settings: AppSettings, *, show_errors: bool = True) -> bool:
         self._save_timer.stop()
         try:
             self._settings_repository.save(settings)
         except SettingsSaveError as error:
-            self._settings_dialog.show_error(str(error))
+            if show_errors:
+                self._settings_dialog.show_error(str(error))
             return False
         self._settings = settings
         self._settings_dirty = False

@@ -286,6 +286,7 @@ class FocusPanelController(QObject):
                 count=impact.session_count,
                 duration=format_compact_duration(impact.total_seconds),
             ),
+            accept_key="common.delete_action",
             destructive=True,
         ):
             return

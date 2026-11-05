@@ -34,6 +34,10 @@ class IconName(Enum):
     MONTHLY = "monthly"
     FOCUS_ITEMS = "focus_items"
     HISTORY = "history"
+    ASSISTANT = "assistant"
+    DELETE = "delete"
+    CONFIRM = "confirm"
+    SIDEBAR = "sidebar"
     SETTINGS = "settings"
     SHOW_COMPANION = "show_companion"
     EXIT = "exit"
@@ -46,7 +50,7 @@ class IconSystem:
     def icon(name: IconName, size: int = 20) -> QIcon:
         tokens = get_theme_manager().tokens
         icon = QIcon()
-        normal = _render(name, size, QColor(tokens.primary))
+        normal = _render(name, size, QColor(tokens.muted if name is IconName.SIDEBAR else tokens.primary))
         disabled = _render(name, size, QColor(tokens.disabled))
         icon.addPixmap(normal, QIcon.Mode.Normal, QIcon.State.Off)
         icon.addPixmap(normal, QIcon.Mode.Active, QIcon.State.Off)
@@ -68,7 +72,10 @@ def _render(name: IconName, size: int, color: QColor) -> QPixmap:
     bounds = QRectF(3, 3, size - 6, size - 6)
     center = QPointF(size / 2, size / 2)
 
-    if name is IconName.APPEARANCE:
+    if name is IconName.SIDEBAR:
+        painter.drawRoundedRect(QRectF(3, 3.5, size - 6, size - 7), 2.5, 2.5)
+        painter.drawLine(QLineF(8, 4, 8, size - 4))
+    elif name is IconName.APPEARANCE:
         painter.drawEllipse(QRectF(center.x() - 3, center.y() - 3, 6, 6))
         for index in range(8):
             angle = index * pi / 4
@@ -142,6 +149,37 @@ def _render(name: IconName, size: int, color: QColor) -> QPixmap:
         painter.drawLine(QLineF(5, 16, size - 3, 16))
         painter.drawLine(QLineF(12, 7, size - 3, 7))
         painter.drawLine(QLineF(13, 11.5, size - 3, 11.5))
+    elif name is IconName.ASSISTANT:
+        # A compact bot silhouette, drawn on the same 20px grid as navigation.
+        painter.save()
+        painter.scale(size / 20, size / 20)
+        painter.drawRoundedRect(QRectF(4, 6.5, 12, 10), 2.8, 2.8)
+        painter.drawLine(QLineF(10, 3.5, 10, 6.5))
+        painter.drawLine(QLineF(2, 11.2, 4, 11.2))
+        painter.drawLine(QLineF(16, 11.2, 18, 11.2))
+        for eye_x in (7.5, 12.5):
+            painter.drawLine(QLineF(eye_x, 10, eye_x, 11.2))
+        painter.drawLine(QLineF(8.5, 14, 11.5, 14))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(color)
+        painter.drawEllipse(QPointF(10, 2.8), 1, 1)
+        painter.restore()
+    elif name in {IconName.DELETE, IconName.CONFIRM}:
+        painter.save()
+        painter.scale(size / 20, size / 20)
+        if name is IconName.DELETE:
+            painter.drawRoundedRect(QRectF(5, 6, 10, 11), 1.7, 1.7)
+            painter.drawRoundedRect(QRectF(7, 2.5, 6, 3), 1, 1)
+            painter.drawLine(QLineF(3.5, 5.5, 16.5, 5.5))
+            painter.drawLine(QLineF(8, 9, 8, 14))
+            painter.drawLine(QLineF(12, 9, 12, 14))
+        else:
+            painter.drawEllipse(QRectF(3, 3, 14, 14))
+            path = QPainterPath(QPointF(6.5, 10))
+            path.lineTo(9, 12.5)
+            path.lineTo(13.5, 7.5)
+            painter.drawPath(path)
+        painter.restore()
     elif name is IconName.SETTINGS:
         painter.drawEllipse(QRectF(center.x() - 3.2, center.y() - 3.2, 6.4, 6.4))
         painter.drawEllipse(QRectF(center.x() - 1, center.y() - 1, 2, 2))

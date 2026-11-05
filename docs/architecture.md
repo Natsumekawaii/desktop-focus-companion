@@ -2,6 +2,18 @@
 
 # Desktop Focus Companion 1.0 Architecture
 
+## Optional assistant boundaries (development branch)
+
+`DashboardPage.AI_ASSISTANT` is index 6; the first six indices and controllers retain their existing contracts. `AgentPage` only presents conversations, Markdown, status/source cards and confirmations. `AgentController` owns one active turn, request budgets, consent, cancellation and profile-local history. No widget executes database or network commands directly.
+
+`DeepSeekClient` uses asynchronous `QNetworkAccessManager` and a bounded incremental SSE parser. UTF-8 fragments are decoded only after complete events; incomplete tool calls, malformed JSON, invalid termination and redirected hosts cannot execute. Network requests and committed operations are not automatically replayed. `reasoning_content` remains in complete protocol turns for DeepSeek tool continuation, but not in the displayed answer. Only the official HTTPS origin is used; model availability is explicitly verified.
+
+`WriteRequestContext` owns a transient request ID, authorized operation/field/record scope and indexed user messages. It survives only a related clarification, never a stop, conversation switch or restart. v2 tools bind to this ID and verify exact message fragments separately from semantic field evidence; legacy calls still pass their original safety checks. Structured validation errors carry stable codes, field paths and categories. Before a plan exists the controller permits one format correction with an unchanged operation signature; missing information, conflicts and expired confirmations are not retried. `ChangePreview` renders readable before/after fields while keeping raw tool JSON collapsed.
+
+`FocusTools` runs in an owned `QThread`, opens independent database connections and pins one IANA timezone per turn. Queries use validated filters, bounded keyset pages and authoritative local aggregation over all matches, reusing UTC-based midnight allocation. The controller snapshots the live timer on the GUI thread and exposes it read-only. No live Qt timer crosses threads. Existing dashboard refresh signals propagate successful record changes to every statistics surface.
+
+`evidence.py` conservatively grounds changed values in user messages, not record notes. `focus_record_changes.apply_changes` independently enforces atomicity, exact snapshot/timezone validation, explicit confirmation where needed, bounded batches and durable UUID receipts in the existing settings table. A pending plan is never executable after restart. A receipt can repair a chat card after a crash without performing the operation again. The separate `agent/conversations.sqlite3` holds conversations/preferences; no main-schema migration or credential-in-JSON fallback is introduced. See [data safety](data-safety.md#optional-ai-and-data-leaving-the-device).
+
 Desktop Focus Companion is a local-first PySide6 personal focus system. The desktop companion is a presentation and shortcut boundary; it does not encode Focus state, goals, consistency, or analytics.
 
 ## Composition Root

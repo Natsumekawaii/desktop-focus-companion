@@ -97,7 +97,7 @@ def test_dashboard_analytics_tab_renders_all_periods(qt_application) -> None:
         [FocusItemTotal(7, "Writing", 7200)],
     )
 
-    assert window._tabs.count() == 6
+    assert window._tabs.count() == 7  # Existing pages retain their indices; AI is appended.
     assert window._daily_trend.values == snapshot.daily_trend
     assert window._weekly_trend.values == snapshot.weekly_trend
     assert window._monthly_trend.values == snapshot.monthly_trend
